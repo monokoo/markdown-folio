@@ -21,7 +21,7 @@ export default defineConfig({
             output: {
                 format: 'cjs',
                 entryFileNames: 'extension.js',
-                inlineDynamicImports: true,
+                chunkFileNames: 'chunks/[name].js',
             }
         },
         target: 'node18',

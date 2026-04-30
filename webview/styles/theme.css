@@ -356,6 +356,7 @@ body.zen-mode {
     --app-bg: #f6f8fa;
     --quote-bg: #f0f0f0;
     --code-bg: #f8f8f8;
+    --dropdown-bg: #ffffff;
     
     --syntax-keyword: #a626a4;
     --syntax-string: #50a14f;

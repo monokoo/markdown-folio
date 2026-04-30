@@ -6,11 +6,8 @@ import { FrontmatterParser } from './engine/FrontmatterParser';
 import { TocGenerator } from './engine/TocGenerator';
 import { debounce } from './utils/debounce';
 import { SettingsManager } from './SettingsManager';
-import { PdfExporter } from './PdfExporter';
 import { HtmlBuilder } from './HtmlBuilder';
 import { HtmlExporter } from './HtmlExporter';
-import { PngExporter } from './PngExporter';
-import { DocxExporter } from './DocxExporter';
 
 export class PreviewPanel {
     private static readonly _markdownEngine = new MarkdownEngine();
@@ -276,6 +273,7 @@ export class PreviewPanel {
                     cancellable: false,
                 },
                 async () => {
+                    const { PdfExporter } = await import('./PdfExporter');
                     await PdfExporter.export(pdfHtml, {
                         orientation,
                         size,
@@ -394,6 +392,7 @@ export class PreviewPanel {
                 await vscode.window.withProgress(
                     { location: vscode.ProgressLocation.Notification, title: 'Markdown Folio: Exporting PNG...', cancellable: false },
                     async () => {
+                        const { PngExporter } = await import('./PngExporter');
                         await PngExporter.export(pngHtml, { outputPath: saveUri.fsPath, mode: 'full' });
                     }
                 );
@@ -413,6 +412,7 @@ export class PreviewPanel {
                 await vscode.window.withProgress(
                     { location: vscode.ProgressLocation.Notification, title: 'Markdown Folio: Exporting PNG pages...', cancellable: false },
                     async () => {
+                        const { PngExporter } = await import('./PngExporter');
                         await PngExporter.export(pngHtml, { outputPath: folderUri.fsPath, mode: 'pages' });
                     }
                 );
@@ -442,6 +442,7 @@ export class PreviewPanel {
             await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'Markdown Folio: Exporting DOCX...', cancellable: false },
                 async () => {
+                    const { DocxExporter } = await import('./DocxExporter');
                     await DocxExporter.export(this._buildExportHtml(), {
                         outputPath: saveUri.fsPath,
                         title: this._lastTitle,
@@ -504,6 +505,7 @@ export class PreviewPanel {
     private _getHtmlForWebview(webview: vscode.Webview): string {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview.js'));
         const katexCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'katex.css'));
+        const mermaidUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'mermaid.min.js'));
         const nonce = getNonce();
 
         return `<!DOCTYPE html>
@@ -518,7 +520,7 @@ export class PreviewPanel {
                 <link rel="stylesheet" href="${katexCssUri}">
                 <title>Markdown Folio Preview</title>
             </head>
-            <body>
+            <body data-mermaid-src="${mermaidUri}">
                 <div id="toolbar">
                     <button class="export-pill export-pdf-toggle" id="pdf-dropdown-toggle" title="Export PDF">
                         Export PDF <svg class="dropdown-icon" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>

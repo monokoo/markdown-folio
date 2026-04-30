@@ -2,7 +2,6 @@ import { Renderer } from './renderer';
 import { Toolbar } from './toolbar';
 import { Toc } from './toc';
 import { ScrollSync } from './scrollSync';
-import mermaid from 'mermaid';
 import './styles/theme.css';
 import './styles/document.css';
 import './styles/toolbar.css';
@@ -17,6 +16,13 @@ const toc = new Toc('sidebar-toc');
 const scrollSync = new ScrollSync(vscode, 'document-container');
 const codeCopyIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2"></rect><rect x="5" y="5" width="10" height="10" rx="2"></rect></svg>';
 const codeCopiedIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>';
+
+type MermaidApi = {
+    initialize: (config: Record<string, unknown>) => void;
+    run: (options: { nodes?: HTMLElement[]; querySelector?: string }) => Promise<unknown>;
+};
+
+let mermaidLoadPromise: Promise<MermaidApi> | null = null;
 
 // Center toolbar over #document-container (not full viewport, to account for TOC sidebar)
 function syncToolbarPosition() {
@@ -60,13 +66,46 @@ function prepareMermaidNodes(nodes: HTMLElement[], restoreSource: boolean): void
     });
 }
 
-function runMermaid(nodes: HTMLElement[], restoreSource: boolean): Promise<void> {
+function loadMermaid(): Promise<MermaidApi> {
+    if (mermaidLoadPromise) {
+        return mermaidLoadPromise;
+    }
+
+    const existing = (window as any).mermaid as MermaidApi | undefined;
+    if (existing) {
+        mermaidLoadPromise = Promise.resolve(existing);
+        return mermaidLoadPromise;
+    }
+
+    mermaidLoadPromise = new Promise((resolve, reject) => {
+        const src = document.body.dataset.mermaidSrc;
+        if (!src) {
+            reject(new Error('Mermaid script URI is missing'));
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.onload = () => {
+            const api = (window as any).mermaid as MermaidApi | undefined;
+            api ? resolve(api) : reject(new Error('Mermaid API is unavailable'));
+        };
+        script.onerror = () => reject(new Error('Failed to load Mermaid'));
+        document.head.appendChild(script);
+    });
+
+    return mermaidLoadPromise;
+}
+
+async function runMermaid(nodes: HTMLElement[], restoreSource: boolean): Promise<void> {
     if (nodes.length === 0) {
-        return Promise.resolve();
+        return;
     }
     prepareMermaidNodes(nodes, restoreSource);
+    const mermaid = await loadMermaid();
     mermaid.initialize({ startOnLoad: false, theme: getMermaidTheme(), securityLevel: 'loose' });
-    return mermaid.run({ nodes }).then(() => undefined);
+    await mermaid.run({ nodes });
 }
 
 function getCodeBlockText(pre: HTMLPreElement): string {

@@ -115,7 +115,7 @@ body.light-mode #toolbar {
     padding: 10px;
     border-radius: 12px;
     border: 1px solid var(--toolbar-border);
-    background: var(--dropdown-bg);
+    background: var(--dropdown-bg, var(--bg-secondary, #ffffff));
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
     display: none;
     z-index: 1001;

@@ -20,6 +20,7 @@
 }
 
 .toc-item {
+    position: relative;
     padding: 6px 14px;
     font-size: 12px;
     color: var(--toc-item-color);
@@ -30,26 +31,68 @@
 }
 
 .toc-item:not(.level-1) {
-    opacity: 0.85;
+    opacity: 0.82;
 }
 
 .toc-item.level-1 {
     padding-left: 14px;
     color: var(--gold-color);
-    font-weight: 600;
+    font-size: 12.5px;
+    font-weight: 700;
     opacity: 1;
 }
 
 .toc-item.level-2 {
-    padding-left: 22px;
+    padding-left: 28px;
+    font-weight: 600;
+    color: color-mix(in oklab, var(--toc-item-color) 86%, var(--text-primary));
 }
 
-.toc-item.level-3,
-.toc-item.level-4,
+.toc-item.level-3 {
+    padding-left: 44px;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.toc-item.level-4 {
+    padding-left: 58px;
+    font-size: 10.5px;
+}
+
 .toc-item.level-5,
 .toc-item.level-6 {
-    padding-left: 30px;
-    font-size: 11px;
+    padding-left: 70px;
+    font-size: 10.5px;
+}
+
+.toc-item.level-2::before,
+.toc-item.level-3::before,
+.toc-item.level-4::before,
+.toc-item.level-5::before,
+.toc-item.level-6::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: color-mix(in oklab, var(--toc-item-color) 18%, transparent);
+}
+
+.toc-item.level-2::before {
+    left: 18px;
+}
+
+.toc-item.level-3::before {
+    left: 32px;
+}
+
+.toc-item.level-4::before {
+    left: 46px;
+}
+
+.toc-item.level-5::before,
+.toc-item.level-6::before {
+    left: 58px;
 }
 
 .toc-item:hover {
@@ -65,6 +108,10 @@
     background: var(--toc-item-active-bg);
     border-left-color: var(--gold-color);
     opacity: 1;
+}
+
+.toc-item.active::before {
+    background: color-mix(in oklab, var(--gold-color) 55%, transparent);
 }
 
 @media (max-width: 1200px) {
