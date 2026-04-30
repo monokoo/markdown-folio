@@ -366,7 +366,7 @@ export class PreviewPanel {
                 settings,
                 title: this._lastTitle,
                 toc: this._lastToc,
-                exportOptions: { compactPaper: mode === 'full' },
+                exportOptions: { compactPaper: mode === 'full', pngCapture: true },
             });
 
             if (mode === 'full') {

@@ -16,6 +16,7 @@ export interface PdfSettings {
 
 export interface ExportHtmlOptions {
     compactPaper?: boolean;
+    pngCapture?: boolean;
 }
 
 export class HtmlBuilder {
@@ -121,6 +122,7 @@ export class HtmlBuilder {
         const bodyClasses = [
             bodyClass,
             exportOptions?.compactPaper ? 'export-compact-paper' : '',
+            exportOptions?.pngCapture ? 'export-png-capture' : '',
         ].filter(Boolean).join(' ');
 
         return `<!DOCTYPE html>
@@ -140,6 +142,23 @@ export class HtmlBuilder {
     <style>
         #document-container { padding-top: 32px; min-height: 100vh; }
         body.export-compact-paper #document-paper { min-height: 0; }
+        body.export-png-capture,
+        body.export-png-capture .workspace-shell {
+            height: auto;
+            min-height: 0;
+            overflow: visible;
+        }
+        body.export-png-capture #document-container {
+            height: auto;
+            min-height: 0;
+            overflow: visible;
+            padding: 32px 24px;
+        }
+        body.export-png-capture #document-paper {
+            transform: none;
+            transition: none;
+            margin-bottom: 0;
+        }
         #sidebar-toc a { color: inherit; text-decoration: none; display: block; }
     </style>
 </head>
