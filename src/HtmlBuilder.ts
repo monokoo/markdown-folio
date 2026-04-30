@@ -11,7 +11,7 @@ export interface PdfSettings {
     pageWidth?: 'narrow' | 'standard' | 'wide';
     showToolbar?: boolean;
     showTocSidebar?: boolean;
-    theme?: 'admiral' | 'ivory' | 'serene' | 'cyberpunk' | 'dracula' | 'github';
+    theme?: 'admiral' | 'ivory' | 'serene' | 'cyberpunk' | 'dracula' | 'github' | 'zen';
 }
 
 export class HtmlBuilder {
@@ -184,7 +184,7 @@ export class HtmlBuilder {
     }
 
     private static _isDarkTheme(theme?: PdfSettings['theme']): boolean {
-        return !['ivory', 'serene', 'github'].includes(theme || 'ivory');
+        return !['ivory', 'serene', 'github', 'zen'].includes(theme || 'ivory');
     }
 
     private static _buildPdfThemeOverrides(themeCss: string, theme?: PdfSettings['theme']): string {
@@ -197,6 +197,181 @@ export class HtmlBuilder {
             .map(line => line.trim())
             .filter(line => line.startsWith('--'))
             .join('\n');
+
+        if (themeName === 'zen') {
+            return `
+body.zen-mode {
+${vars}
+    color: var(--text-primary);
+    background: #ffffff;
+}
+body.zen-mode #document-content {
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+}
+body.zen-mode h1,
+body.zen-mode h2,
+body.zen-mode h3,
+body.zen-mode h4,
+body.zen-mode h5,
+body.zen-mode h6 {
+    color: var(--gold-color);
+    font-family: var(--font-heading);
+    font-weight: 600;
+    line-height: 1.3;
+    border-bottom: none;
+}
+body.zen-mode h1,
+body.zen-mode h2 {
+    border-bottom: 1px solid rgba(44, 62, 80, 0.48);
+    padding-bottom: 0.24em;
+}
+body.zen-mode h1 {
+    font-size: 22pt;
+    margin-top: 0;
+    margin-bottom: 0.75rem;
+}
+body.zen-mode h2 {
+    font-size: 17pt;
+    margin-top: 2.2rem;
+    margin-bottom: 0.7rem;
+}
+body.zen-mode h3,
+body.zen-mode h4,
+body.zen-mode h5,
+body.zen-mode h6 {
+    font-size: 13pt;
+    margin-top: 1.8rem;
+    margin-bottom: 0.55rem;
+}
+body.zen-mode a {
+    color: var(--accent-color);
+    text-decoration: none;
+    font-weight: 600;
+}
+body.zen-mode p {
+    margin: 1.2em 0;
+}
+body.zen-mode blockquote {
+    border-left: 4px solid var(--accent-color);
+    background: var(--quote-bg);
+    color: #5c5c5c;
+    padding: 0.1rem 1rem;
+    margin: 0.9em 0;
+    border-radius: 2px;
+}
+body.zen-mode blockquote p {
+    margin: 0;
+    padding: 1px 0;
+    line-height: 1.45;
+}
+body.zen-mode pre {
+    border: none;
+    border-radius: 4px;
+    padding: 10px 16px;
+    background: var(--code-bg);
+    margin: 0.75em 0;
+    font-family: var(--font-mono);
+}
+body.zen-mode pre code {
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 9pt;
+    line-height: 1.55;
+}
+body.zen-mode .hljs-keyword,
+body.zen-mode .hljs-selector-tag,
+body.zen-mode .hljs-literal,
+body.zen-mode .hljs-section,
+body.zen-mode .hljs-link,
+body.zen-mode .hljs-bullet,
+body.zen-mode .hljs-subst,
+body.zen-mode .hljs-meta,
+body.zen-mode .hljs-symbol,
+body.zen-mode .hljs-attribute {
+    color: var(--syntax-keyword);
+}
+body.zen-mode .hljs-string,
+body.zen-mode .hljs-doctag,
+body.zen-mode .hljs-regexp {
+    color: var(--syntax-string);
+}
+body.zen-mode .hljs-title,
+body.zen-mode .hljs-name,
+body.zen-mode .hljs-selector-id,
+body.zen-mode .hljs-selector-class {
+    color: var(--syntax-function);
+}
+body.zen-mode .hljs-variable,
+body.zen-mode .hljs-template-variable,
+body.zen-mode .hljs-params,
+body.zen-mode .hljs-punctuation,
+body.zen-mode .hljs-operator {
+    color: var(--syntax-variable);
+}
+body.zen-mode .hljs-comment,
+body.zen-mode .hljs-quote,
+body.zen-mode .hljs-deletion {
+    color: var(--syntax-comment);
+    font-style: italic;
+}
+body.zen-mode .hljs-type,
+body.zen-mode .hljs-built_in,
+body.zen-mode .hljs-number,
+body.zen-mode .hljs-addition {
+    color: var(--syntax-constant);
+}
+body.zen-mode .hljs-attr,
+body.zen-mode .hljs-property {
+    color: var(--syntax-class);
+}
+body.zen-mode code {
+    background: var(--code-bg);
+    padding: 2px 5px;
+    margin: 0 2px;
+    border-radius: 2px;
+    color: #e96900;
+    font-family: var(--font-mono);
+    font-size: 9pt;
+    font-weight: 400;
+    font-synthesis: none;
+    white-space: pre-wrap;
+}
+body.zen-mode table th,
+body.zen-mode table td {
+    border: 1px solid #ddd;
+    padding: 6px 13px;
+}
+body.zen-mode table tr:nth-child(even) {
+    background: #f8f8f8;
+}
+body.zen-mode th {
+    background: #f8f8f8;
+    color: var(--gold-color);
+}
+body.zen-mode ul,
+body.zen-mode ol {
+    line-height: 1.6rem;
+    margin: 0.6em 0 0.6em 1.5em;
+}
+body.zen-mode li {
+    margin-bottom: 0.25em;
+}
+body.zen-mode hr {
+    border: none;
+    border-top: 1px solid #666;
+    margin: 1.2em 0;
+    opacity: 0.3;
+}
+body.zen-mode em {
+    color: var(--text-muted);
+}`;
+        }
 
         return `
 body.${themeName}-mode {
@@ -290,8 +465,9 @@ body.${themeName}-mode hr {
         if (!settings) { return ''; }
 
         const lines: string[] = [];
+        const themeControlsFonts = settings.theme === 'zen';
 
-        if (settings.headingFont) {
+        if (settings.headingFont && !themeControlsFonts) {
             lines.push(`h1, h3, h4, h5, h6 { font-family: ${settings.headingFont}, Georgia, serif; }`);
         }
         if (settings.headingSize) {
@@ -301,7 +477,7 @@ body.${themeName}-mode hr {
             const [h1, h2, h3] = hMap[settings.headingSize] ?? hMap['M'];
             lines.push(`h1 { font-size: ${h1}; } h2 { font-size: ${h2}; } h3, h4, h5, h6 { font-size: ${h3}; }`);
         }
-        if (settings.bodyFont) {
+        if (settings.bodyFont && !themeControlsFonts) {
             lines.push(`body, #document-content { font-family: ${settings.bodyFont}, 'Segoe UI', system-ui, sans-serif; }`);
         }
         if (settings.fontSize) {

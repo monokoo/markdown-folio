@@ -9,7 +9,7 @@ export interface PreviewSettings {
     pageWidth: 'narrow' | 'standard' | 'wide';
     showToolbar: boolean;
     showTocSidebar: boolean;
-    theme: 'admiral' | 'ivory' | 'serene' | 'cyberpunk' | 'dracula' | 'github';
+    theme: 'admiral' | 'ivory' | 'serene' | 'cyberpunk' | 'dracula' | 'github' | 'zen';
     scrollSync: boolean;
 }
 
@@ -40,7 +40,7 @@ export class SettingsManager {
             pageWidth: cfg.get<'narrow' | 'standard' | 'wide'>('pageWidth', DEFAULTS.pageWidth),
             showToolbar: cfg.get<boolean>('showToolbar', DEFAULTS.showToolbar),
             showTocSidebar: cfg.get<boolean>('showTocSidebar', DEFAULTS.showTocSidebar),
-            theme: cfg.get<'admiral' | 'ivory' | 'serene' | 'cyberpunk' | 'dracula' | 'github'>('theme', DEFAULTS.theme),
+            theme: cfg.get<'admiral' | 'ivory' | 'serene' | 'cyberpunk' | 'dracula' | 'github' | 'zen'>('theme', DEFAULTS.theme),
             scrollSync: cfg.get<boolean>('scrollSync', DEFAULTS.scrollSync),
         };
     }
