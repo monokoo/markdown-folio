@@ -41,13 +41,20 @@ export class PreviewPanel {
         document: vscode.TextDocument,
         panel: vscode.WebviewPanel
     ): PreviewPanel {
-        panel.webview.options = {
-            enableScripts: true,
-            localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist')]
-        };
+        panel.webview.options = PreviewPanel._getWebviewOptions(context.extensionUri, document);
         const instance = new PreviewPanel(panel, context.extensionUri, document);
         instance._mode = 'customEditor';
         return instance;
+    }
+
+    private static _getWebviewOptions(extensionUri: vscode.Uri, document: vscode.TextDocument): vscode.WebviewOptions {
+        return {
+            enableScripts: true,
+            localResourceRoots: [
+                vscode.Uri.joinPath(extensionUri, 'dist'),
+                vscode.Uri.file(path.dirname(document.fileName))
+            ]
+        };
     }
 
     public static createOrShow(context: vscode.ExtensionContext, document: vscode.TextDocument) {
@@ -56,6 +63,7 @@ export class PreviewPanel {
         // If we already have a panel, show it.
         if (PreviewPanel.currentPanel) {
             PreviewPanel.currentPanel._document = document;
+            PreviewPanel.currentPanel._panel.webview.options = PreviewPanel._getWebviewOptions(context.extensionUri, document);
             PreviewPanel.currentPanel._hasPendingRender = true;
             PreviewPanel.currentPanel._update();
             PreviewPanel.currentPanel._panel.reveal(column);
@@ -68,9 +76,8 @@ export class PreviewPanel {
             `Preview: ${path.basename(document.fileName)}`,
             column || vscode.ViewColumn.One,
             {
-                enableScripts: true,
-                retainContextWhenHidden: true,
-                localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist')]
+                ...PreviewPanel._getWebviewOptions(context.extensionUri, document),
+                retainContextWhenHidden: true
             }
         );
 
@@ -82,8 +89,8 @@ export class PreviewPanel {
         this._extensionUri = extensionUri;
         this._document = document;
 
-        // Set the webview's initial html content
-        this._update();
+        // Set the webview shell first; render content after the webview signals ready.
+        this._initializeWebview();
 
         // Listen for when the panel is disposed
         // This happens when the user closes the panel or when the panel is closed programmatically
@@ -256,7 +263,7 @@ export class PreviewPanel {
             const distDir = path.join(this._extensionUri.fsPath, 'dist');
             const settings = SettingsManager.read();
             const pdfHtml = HtmlBuilder.buildPdfHtml({
-                html: this._lastRenderedHtml,
+                html: this._buildExportHtml(),
                 distDir,
                 settings,
                 title: this._lastTitle,
@@ -320,6 +327,14 @@ export class PreviewPanel {
         return text.trim();
     }
 
+    private _buildExportHtml(): string {
+        const documentContent = this._document.getText();
+        const documentDir = path.dirname(this._document.fileName);
+        const { content, lineOffset } = FrontmatterParser.extract(documentContent);
+        const exportContent = PathResolver.resolveImages(content, documentDir);
+        return PreviewPanel._markdownEngine.render(exportContent, lineOffset);
+    }
+
     private async _handleExportHtml(): Promise<void> {
         if (!this._guardContent()) { return; }
         try {
@@ -333,7 +348,7 @@ export class PreviewPanel {
             const distDir = path.join(this._extensionUri.fsPath, 'dist');
             const settings = SettingsManager.read();
             const exportHtml = HtmlBuilder.buildExportHtml({
-                html: this._lastRenderedHtml,
+                html: this._buildExportHtml(),
                 distDir,
                 settings,
                 title: this._lastTitle,
@@ -361,7 +376,7 @@ export class PreviewPanel {
             const distDir = path.join(this._extensionUri.fsPath, 'dist');
             const settings = SettingsManager.read();
             const pngHtml = HtmlBuilder.buildExportHtml({
-                html: this._lastRenderedHtml,
+                html: this._buildExportHtml(),
                 distDir,
                 settings,
                 title: this._lastTitle,
@@ -427,7 +442,7 @@ export class PreviewPanel {
             await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'Markdown Folio: Exporting DOCX...', cancellable: false },
                 async () => {
-                    await DocxExporter.export(this._lastRenderedHtml, {
+                    await DocxExporter.export(this._buildExportHtml(), {
                         outputPath: saveUri.fsPath,
                         title: this._lastTitle,
                         distDir,
@@ -445,17 +460,23 @@ export class PreviewPanel {
         }
     }
 
+    private _initializeWebview() {
+        if (!this._htmlInitialized) {
+            this._panel.webview.html = this._getHtmlForWebview(this._panel.webview);
+            this._htmlInitialized = true;
+        }
+    }
+
     private _update() {
         const webview = this._panel.webview;
-
         const documentContent = this._document.getText();
         const documentDir = path.dirname(this._document.fileName);
 
         const { title, author, date, content, lineOffset } = FrontmatterParser.extract(documentContent);
-        const base64MappedContent = PathResolver.resolveImages(content, documentDir);
+        const previewContent = PathResolver.resolveImagesForWebview(content, documentDir, webview);
         const toc = TocGenerator.extract(content);
 
-        const html = PreviewPanel._markdownEngine.render(base64MappedContent, lineOffset);
+        const html = PreviewPanel._markdownEngine.render(previewContent, lineOffset);
         this._lastRenderedHtml = html;
         this._lastToc = toc;
         this._lastTitle = title || path.basename(this._document.fileName, '.md');
@@ -463,10 +484,7 @@ export class PreviewPanel {
         // Update panel title
         this._panel.title = `Preview: ${title || path.basename(this._document.fileName)}`;
 
-        if (!this._htmlInitialized) {
-            this._panel.webview.html = this._getHtmlForWebview(webview);
-            this._htmlInitialized = true;
-        }
+        this._initializeWebview();
 
         if (this._panel.visible && this._webviewReady) {
             const settings = SettingsManager.read();

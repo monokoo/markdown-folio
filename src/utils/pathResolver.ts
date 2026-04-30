@@ -44,4 +44,33 @@ export class PathResolver {
             return match;
         });
     }
+
+    /**
+     * Resolves relative image paths to webview-safe URIs without reading image
+     * files into the extension host. Export paths still use resolveImages().
+     */
+    public static resolveImagesForWebview(
+        markdown: string,
+        documentDir: string,
+        webview: vscode.Webview
+    ): string {
+        const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+
+        return markdown.replace(imageRegex, (match, alt, imageUrl) => {
+            if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://') || imageUrl.startsWith('data:')) {
+                return match;
+            }
+
+            try {
+                const absolutePath = path.isAbsolute(imageUrl)
+                    ? imageUrl
+                    : path.join(documentDir, imageUrl);
+                const webviewUri = webview.asWebviewUri(vscode.Uri.file(absolutePath));
+                return `![${alt}](${webviewUri})`;
+            } catch (err) {
+                console.error(`Failed to resolve image path: ${imageUrl}`, err);
+                return match;
+            }
+        });
+    }
 }

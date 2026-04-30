@@ -1,5 +1,3 @@
-import mermaid from 'mermaid';
-
 export class Toolbar {
     private _zoom = 1;
     private _orientation: 'portrait' | 'landscape' = 'portrait';
