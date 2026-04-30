@@ -14,6 +14,10 @@ export interface PdfSettings {
     theme?: 'admiral' | 'ivory' | 'serene' | 'cyberpunk' | 'dracula' | 'github' | 'zen';
 }
 
+export interface ExportHtmlOptions {
+    compactPaper?: boolean;
+}
+
 export class HtmlBuilder {
     /**
      * Tạo HTML self-contained cho PDF.
@@ -97,8 +101,9 @@ export class HtmlBuilder {
         settings?: PdfSettings;
         title?: string;
         toc?: TocItem[];
+        exportOptions?: ExportHtmlOptions;
     }): string {
-        const { html, distDir, settings, title, toc = [] } = params;
+        const { html, distDir, settings, title, toc = [], exportOptions } = params;
 
         const themeCss = HtmlBuilder._readDistOrSourceCss(distDir, 'theme.css');
         const documentCss = HtmlBuilder._readDistOrSourceCss(distDir, 'document.css');
@@ -113,6 +118,10 @@ export class HtmlBuilder {
         const bodyClass = HtmlBuilder._themeClass(settings?.theme);
         const sidebarHtml = settings?.showTocSidebar === false ? '' : HtmlBuilder._buildTocHtml(toc);
         const pageWidth = settings?.pageWidth || 'standard';
+        const bodyClasses = [
+            bodyClass,
+            exportOptions?.compactPaper ? 'export-compact-paper' : '',
+        ].filter(Boolean).join(' ');
 
         return `<!DOCTYPE html>
 <html lang="en">
@@ -130,10 +139,11 @@ export class HtmlBuilder {
     ${settingsOverrides ? `<style>${settingsOverrides}</style>` : ''}
     <style>
         #document-container { padding-top: 32px; min-height: 100vh; }
+        body.export-compact-paper #document-paper { min-height: 0; }
         #sidebar-toc a { color: inherit; text-decoration: none; display: block; }
     </style>
 </head>
-<body class="${bodyClass}">
+<body class="${bodyClasses}">
     <div class="workspace-shell">
         ${sidebarHtml ? `<aside id="sidebar-toc">${sidebarHtml}</aside>` : ''}
         <main id="document-container">
