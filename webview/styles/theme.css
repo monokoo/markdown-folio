@@ -336,6 +336,10 @@ body.github-mode {
 }
 
 body.zen-mode {
+    --font-main: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    --font-heading: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    --font-mono: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Courier New', monospace;
     --bg-primary: #f6f8fa;
     --bg-secondary: #ffffff;
     --bg-surface: #ffffff;
@@ -353,17 +357,20 @@ body.zen-mode {
     --quote-bg: #f0f0f0;
     --code-bg: #f8f8f8;
     
-    /* MPE Auto Syntax */
     --syntax-keyword: #a626a4;
     --syntax-string: #50a14f;
     --syntax-comment: #a0a1a7;
     --syntax-function: #4078f2;
+    --syntax-variable: #525252;
+    --syntax-constant: #c76b29;
+    --syntax-class: #c08b30;
 }
 
-/* ── Zen mode: MPE vue.css style replication ── */
 body.zen-mode #document-content {
     color: #34495e !important;
+    font-family: var(--font-body) !important;
     line-height: 1.6 !important;
+    -webkit-font-smoothing: antialiased;
 }
 
 body.zen-mode #document-content h1,
@@ -372,25 +379,35 @@ body.zen-mode #document-content h3,
 body.zen-mode #document-content h4,
 body.zen-mode #document-content h5 {
     color: #2c3e50 !important;
-    font-weight: 500 !important;
+    font-family: var(--font-heading) !important;
+    font-weight: 600 !important;
     border-bottom: none !important;
 }
 
 body.zen-mode #document-content h1,
 body.zen-mode #document-content h2 {
-    border-bottom: 1px solid #666 !important;
+    border-bottom: 1px solid rgba(44, 62, 80, 0.48) !important;
     padding-bottom: 0.24em !important;
 }
 
+body.zen-mode #document-content h1 {
+    margin-bottom: 0.75rem !important;
+}
+
 body.zen-mode #document-content h2 {
-    margin-top: 45px !important;
-    margin-bottom: 0.8rem !important;
+    margin-top: 2.2rem !important;
+    margin-bottom: 0.7rem !important;
+}
+
+body.zen-mode #document-content h3 {
+    margin-top: 1.8rem !important;
+    margin-bottom: 0.55rem !important;
 }
 
 body.zen-mode #document-content a {
     color: #42b983 !important;
     text-decoration: none !important;
-    font-weight: 400 !important;
+    font-weight: 600 !important;
 }
 
 body.zen-mode #document-content a:hover {
@@ -401,8 +418,8 @@ body.zen-mode #document-content blockquote {
     border-left: 4px solid #42b983 !important;
     background-color: var(--quote-bg) !important;
     color: #5c5c5c !important;
-    padding: 0 15px !important;
-    margin: 0.75em 0 !important;
+    padding: 0.1rem 1rem !important;
+    margin: 0.9em 0 !important;
     border-radius: 2px !important;
     white-space: pre-wrap !important;
 }
@@ -438,15 +455,19 @@ body.zen-mode #document-content .highlight,
 body.zen-mode #document-content .highlight pre {
     border: none !important;
     border-radius: 4px !important;
-    padding: 10px 16px !important;
+    padding: 10px 48px 10px 16px !important;
     background-color: var(--code-bg) !important;
     margin: 0.75em 0 !important;
+    font-family: var(--font-mono) !important;
 }
 
 body.zen-mode #document-content pre code.hljs {
     padding: 0 !important;
     background: transparent !important;
     border-radius: 0 !important;
+    font-family: var(--font-mono) !important;
+    font-size: 0.86rem !important;
+    line-height: 1.55 !important;
 }
 
 body.zen-mode #document-content code:not(pre code) {
@@ -455,7 +476,7 @@ body.zen-mode #document-content code:not(pre code) {
     margin: 0 2px !important;
     border-radius: 2px !important;
     color: #e96900 !important;
-    font-family: 'Roboto Mono', Monaco, 'Courier New', monospace !important;
+    font-family: var(--font-mono) !important;
     font-size: 0.8rem !important;
     font-weight: 400 !important;
     font-synthesis: none !important;
