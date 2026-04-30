@@ -92,11 +92,56 @@
 }
 
 #document-content pre {
+    position: relative;
     border-radius: 8px;
     border: 1px solid var(--border-color);
     background: var(--code-bg);
-    padding: 14px;
+    padding: 10px 14px;
+    margin: 0.6em 0;
     overflow: auto;
+}
+
+.code-copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 0.72;
+    transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.code-copy-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+#document-content pre:hover .code-copy-btn,
+.code-copy-btn:focus-visible,
+.code-copy-btn.copied {
+    opacity: 1;
+}
+
+.code-copy-btn:hover,
+.code-copy-btn.copied {
+    color: var(--accent-color);
+    border-color: color-mix(in oklab, var(--accent-color) 24%, transparent);
+    background: color-mix(in oklab, var(--page-bg) 88%, var(--accent-color));
 }
 
 #document-content code {

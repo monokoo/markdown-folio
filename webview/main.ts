@@ -15,6 +15,8 @@ const renderer = new Renderer('document-content');
 const toolbar = new Toolbar(vscode);
 const toc = new Toc('sidebar-toc');
 const scrollSync = new ScrollSync(vscode, 'document-container');
+const codeCopyIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2"></rect><rect x="5" y="5" width="10" height="10" rx="2"></rect></svg>';
+const codeCopiedIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>';
 
 // Center toolbar over #document-container (not full viewport, to account for TOC sidebar)
 function syncToolbarPosition() {
@@ -67,6 +69,57 @@ function runMermaid(nodes: HTMLElement[], restoreSource: boolean): Promise<void>
     return mermaid.run({ nodes }).then(() => undefined);
 }
 
+function getCodeBlockText(pre: HTMLPreElement): string {
+    const code = pre.querySelector('code');
+    return code?.textContent ?? pre.textContent ?? '';
+}
+
+function flashCodeCopyButton(button: HTMLButtonElement) {
+    button.innerHTML = codeCopiedIcon;
+    button.title = '已复制';
+    button.setAttribute('aria-label', '已复制');
+    button.classList.add('copied');
+    window.setTimeout(() => {
+        button.innerHTML = codeCopyIcon;
+        button.title = '复制代码';
+        button.setAttribute('aria-label', '复制代码');
+        button.classList.remove('copied');
+    }, 1200);
+}
+
+function enhanceCodeBlockCopyButtons() {
+    document.querySelectorAll<HTMLPreElement>('#document-content pre').forEach(pre => {
+        if (pre.dataset.copyEnhanced === 'true') {
+            return;
+        }
+        if (pre.querySelector('code.language-mermaid')) {
+            return;
+        }
+
+        pre.dataset.copyEnhanced = 'true';
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'code-copy-btn';
+        button.innerHTML = codeCopyIcon;
+        button.title = '复制代码';
+        button.setAttribute('aria-label', '复制代码');
+        button.addEventListener('click', async event => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const text = getCodeBlockText(pre);
+            try {
+                await navigator.clipboard.writeText(text);
+                flashCodeCopyButton(button);
+            } catch {
+                vscode.postMessage({ type: 'copy', payload: { mode: 'plain-text-fallback', text } });
+                flashCodeCopyButton(button);
+            }
+        });
+        pre.appendChild(button);
+    });
+}
+
 // Handle messages from the extension host
 window.addEventListener('message', event => {
     const message = event.data;
@@ -79,6 +132,7 @@ window.addEventListener('message', event => {
                 scrollSync.setEnabled(config.scrollSync !== false);
             }
             renderer.render(message.payload.html);
+            enhanceCodeBlockCopyButtons();
             toc.render(message.payload.toc);
 
             // Build scroll index immediately so sync works for non-mermaid content
@@ -135,7 +189,7 @@ function applySettings(settings: {
     pageWidth?: string;
     showToolbar?: boolean;
     showTocSidebar?: boolean;
-    theme?: 'admiral' | 'ivory' | 'serene' | 'cyberpunk' | 'dracula' | 'github';
+    theme?: 'admiral' | 'ivory' | 'serene' | 'cyberpunk' | 'dracula' | 'github' | 'zen';
     scrollSync?: boolean;
 }) {
     const root = document.documentElement;
@@ -174,7 +228,7 @@ function applySettings(settings: {
         }
     }
     if (settings.theme !== undefined) {
-        document.body.classList.remove('ivory-mode', 'admiral-mode', 'serene-mode', 'cyberpunk-mode', 'dracula-mode', 'github-mode');
+        document.body.classList.remove('ivory-mode', 'admiral-mode', 'serene-mode', 'cyberpunk-mode', 'dracula-mode', 'github-mode', 'zen-mode');
         
         if (settings.theme === 'ivory') {
             document.body.classList.add('ivory-mode');
@@ -188,6 +242,8 @@ function applySettings(settings: {
             document.body.classList.add('dracula-mode');
         } else if (settings.theme === 'github') {
             document.body.classList.add('github-mode');
+        } else if (settings.theme === 'zen') {
+            document.body.classList.add('zen-mode');
         }
         
         // Update active state in theme dropdown

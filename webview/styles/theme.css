@@ -335,6 +335,158 @@ body.github-mode {
     --syntax-class: #953800; /* Orange/Brown */
 }
 
+body.zen-mode {
+    --bg-primary: #f6f8fa;
+    --bg-secondary: #ffffff;
+    --bg-surface: #ffffff;
+    --bg-surface-2: #eaeef2;
+    --border-color: #ddd;
+    --text-primary: #34495e;
+    --text-muted: #7f8c8d;
+    --accent-color: #42b983;
+    --gold-color: #2c3e50;
+    --toolbar-bg: rgba(255, 255, 255, 0.98);
+    --toolbar-border: #eee;
+    --page-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    --page-bg: #ffffff;
+    --app-bg: #f6f8fa;
+    --quote-bg: #f0f0f0;
+    --code-bg: #f8f8f8;
+    
+    /* MPE Auto Syntax */
+    --syntax-keyword: #a626a4;
+    --syntax-string: #50a14f;
+    --syntax-comment: #a0a1a7;
+    --syntax-function: #4078f2;
+}
+
+/* ── Zen mode: MPE vue.css style replication ── */
+body.zen-mode #document-content {
+    color: #34495e !important;
+    line-height: 1.6 !important;
+}
+
+body.zen-mode #document-content h1,
+body.zen-mode #document-content h2,
+body.zen-mode #document-content h3,
+body.zen-mode #document-content h4,
+body.zen-mode #document-content h5 {
+    color: #2c3e50 !important;
+    font-weight: 500 !important;
+    border-bottom: none !important;
+}
+
+body.zen-mode #document-content h1,
+body.zen-mode #document-content h2 {
+    border-bottom: 1px solid #666 !important;
+    padding-bottom: 0.24em !important;
+}
+
+body.zen-mode #document-content h2 {
+    margin-top: 45px !important;
+    margin-bottom: 0.8rem !important;
+}
+
+body.zen-mode #document-content a {
+    color: #42b983 !important;
+    text-decoration: none !important;
+    font-weight: 400 !important;
+}
+
+body.zen-mode #document-content a:hover {
+    text-decoration: underline !important;
+}
+
+body.zen-mode #document-content blockquote {
+    border-left: 4px solid #42b983 !important;
+    background-color: var(--quote-bg) !important;
+    color: #5c5c5c !important;
+    padding: 0 15px !important;
+    margin: 0.75em 0 !important;
+    border-radius: 2px !important;
+    white-space: pre-wrap !important;
+}
+
+body.zen-mode #document-content blockquote p {
+    margin: 0 !important;
+    padding: 1px 0 !important;
+    line-height: 1.45 !important;
+}
+
+body.zen-mode #document-content blockquote p:first-child {
+    padding-top: 1px !important;
+}
+
+body.zen-mode #document-content blockquote p:last-child {
+    padding-bottom: 1px !important;
+}
+
+body.zen-mode #document-content em {
+    color: #7f8c8d;
+}
+
+body.zen-mode #document-content hr {
+    height: 0 !important;
+    border: none !important;
+    border-top: 1px solid #666 !important;
+    margin: 1.2em 0 !important;
+    opacity: 0.3;
+}
+
+body.zen-mode #document-content pre,
+body.zen-mode #document-content .highlight,
+body.zen-mode #document-content .highlight pre {
+    border: none !important;
+    border-radius: 4px !important;
+    padding: 10px 16px !important;
+    background-color: var(--code-bg) !important;
+    margin: 0.75em 0 !important;
+}
+
+body.zen-mode #document-content pre code.hljs {
+    padding: 0 !important;
+    background: transparent !important;
+    border-radius: 0 !important;
+}
+
+body.zen-mode #document-content code:not(pre code) {
+    background-color: #f8f8f8 !important;
+    padding: 3px 5px !important;
+    margin: 0 2px !important;
+    border-radius: 2px !important;
+    color: #e96900 !important;
+    font-family: 'Roboto Mono', Monaco, 'Courier New', monospace !important;
+    font-size: 0.8rem !important;
+    font-weight: 400 !important;
+    font-synthesis: none !important;
+    line-height: 1.5 !important;
+    white-space: pre-wrap !important;
+}
+
+body.zen-mode #document-content table th,
+body.zen-mode #document-content table td {
+    border: 1px solid #ddd !important;
+    padding: 6px 13px !important;
+}
+
+body.zen-mode #document-content tr:nth-child(2n) {
+    background-color: #f8f8f8 !important;
+}
+
+body.zen-mode #document-content p {
+    margin: 1.2em 0 !important;
+}
+
+body.zen-mode #document-content ul,
+body.zen-mode #document-content ol {
+    line-height: 1.6rem !important;
+    padding-left: 1.5rem !important;
+}
+
+body.zen-mode #document-content li {
+    margin-bottom: 0.25em !important;
+}
+
 * {
     box-sizing: border-box;
 }
@@ -369,7 +521,7 @@ body {
 pre code.hljs {
     display: block;
     overflow-x: auto;
-    padding: 1.2em;
+    padding: 0.6em 0.8em;
     background: var(--code-bg);
     border-radius: 8px;
     font-family: 'JetBrains Mono', 'Fira Code', monospace;

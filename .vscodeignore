@@ -2,7 +2,7 @@ node_modules/
 src/
 webview/
 *.config.ts
-*.map
+**/*.map
 .vscode/
 audit-*.md
 design-visual-logo/

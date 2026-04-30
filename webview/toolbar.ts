@@ -317,7 +317,7 @@ export class Toolbar {
         fontSize?: number;
         headingSize?: 'S' | 'M' | 'L';
         showTocSidebar?: boolean;
-        theme?: 'admiral' | 'ivory' | 'serene' | 'cyberpunk' | 'dracula' | 'github';
+        theme?: 'admiral' | 'ivory' | 'serene' | 'cyberpunk' | 'dracula' | 'github' | 'zen';
         bodyFont?: string;
         lineSpacing?: 'compact' | 'normal' | 'relaxed';
         pageWidth?: 'narrow' | 'standard' | 'wide';
