@@ -411,9 +411,12 @@ export class Toolbar {
                 syncPos();
             }
 
+            const isCollapsed = toolbar.classList.contains('collapsed');
+            toggle.title = isCollapsed ? 'Expand Toolbar' : 'Collapse Toolbar';
+
             const icon = toggle.querySelector('svg path');
             if (icon) {
-                if (toolbar.classList.contains('collapsed')) {
+                if (isCollapsed) {
                     icon.setAttribute('d', 'M15 18l-6-6 6-6'); // < (To Expand)
                 } else {
                     icon.setAttribute('d', 'M9 5l7 7-7 7'); // > (To Collapse)

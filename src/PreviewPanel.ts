@@ -521,7 +521,7 @@ export class PreviewPanel {
                 <title>Markdown Folio Preview</title>
             </head>
             <body data-mermaid-src="${mermaidUri}">
-                <div id="toolbar">
+                <div id="toolbar" class="collapsed">
                     <button class="export-pill export-pdf-toggle" id="pdf-dropdown-toggle" title="Export PDF">
                         Export PDF <svg class="dropdown-icon" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </button>
@@ -550,8 +550,8 @@ export class PreviewPanel {
                         <svg class="dropdown-icon" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </button>
                     <div class="toolbar-sep"></div>
-                    <button class="toolbar-btn" id="toolbar-toggle" title="Collapse Toolbar">
-                        <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <button class="toolbar-btn" id="toolbar-toggle" title="Expand Toolbar">
+                        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </button>
                 </div>
 
