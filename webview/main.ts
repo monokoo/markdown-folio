@@ -48,8 +48,9 @@ window.addEventListener('resize', syncToolbarPosition);
 syncToolbarPosition();
 
 function getMermaidTheme(): 'dark' | 'default' {
-    const isDarkTheme = !document.body.classList.contains('ivory-mode') && !document.body.classList.contains('sepia-mode');
-    return isDarkTheme ? 'dark' : 'default';
+    const lightThemes = ['ivory-mode', 'serene-mode', 'github-mode', 'zen-mode'];
+    const isLightTheme = lightThemes.some(cls => document.body.classList.contains(cls));
+    return isLightTheme ? 'default' : 'dark';
 }
 
 function prepareMermaidNodes(nodes: HTMLElement[], restoreSource: boolean): void {

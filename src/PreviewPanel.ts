@@ -49,6 +49,7 @@ export class PreviewPanel {
             enableScripts: true,
             localResourceRoots: [
                 vscode.Uri.joinPath(extensionUri, 'dist'),
+                ...(vscode.workspace.workspaceFolders?.map(f => f.uri) ?? []),
                 vscode.Uri.file(path.dirname(document.fileName))
             ]
         };

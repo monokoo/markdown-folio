@@ -41,6 +41,13 @@ export class MarkdownEngine {
             .use(markdownItToc, { containerClass: 'auto-toc', listType: 'ul' })
             .use(markdownItKatex);
 
+        // Override validateLink to allow all image data URIs (default rejects svg+xml)
+        const defaultValidateLink = this.md.validateLink.bind(this.md);
+        this.md.validateLink = (url: string) => {
+            if (/^data:image\//i.test(url)) { return true; }
+            return defaultValidateLink(url);
+        };
+
         this.md.renderer.rules.code_inline = (tokens, idx) => {
             return `<code class="hljs code-inline">${this.highlightQuotedStrings(tokens[idx].content)}</code>`;
         };

@@ -198,3 +198,13 @@
 #document-content tr:nth-child(even) {
     background: var(--table-tr-bg);
 }
+
+/* Mermaid Visual & Edge Label Improvements */
+.mermaid .edgeLabel rect {
+    rx: 4px;
+    ry: 4px;
+}
+.mermaid .edgeLabel span {
+    font-family: var(--font-main);
+    font-weight: 500;
+}
