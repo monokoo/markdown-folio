@@ -43,6 +43,12 @@
     width: 236mm;
 }
 
+#document-paper.width-fluid {
+    width: calc(100% - 16px);
+    max-width: 1200px;
+    min-height: auto;
+}
+
 #document-content {
     color: var(--text-primary);
     font-family: var(--font-body);
@@ -174,11 +180,16 @@
 }
 
 /* Table Styles */
-#document-content table {
-    width: 100%;
-    border-collapse: collapse;
+#document-content .table-wrapper {
+    overflow-x: auto;
     margin-top: 1em;
     margin-bottom: 1em;
+    border-radius: 8px;
+}
+
+#document-content table {
+    min-width: 100%;
+    border-collapse: collapse;
     font-size: 0.95em;
 }
 

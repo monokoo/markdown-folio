@@ -659,6 +659,7 @@ export class PreviewPanel {
                                 <button class="set-chip" data-group="page-width" data-value="narrow">Narrow</button>
                                 <button class="set-chip" data-group="page-width" data-value="standard">Standard</button>
                                 <button class="set-chip" data-group="page-width" data-value="wide">Wide</button>
+                                <button class="set-chip" data-group="page-width" data-value="fluid">Fluid</button>
                             </div>
                         </div>
                         <div class="set-row">

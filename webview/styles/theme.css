@@ -83,7 +83,7 @@ body.ivory-mode {
     --app-bg-glow-2: rgba(185, 143, 55, 0.2);
     --quote-bg: rgba(0, 0, 0, 0.04);
     --code-bg: rgba(0, 0, 0, 0.05);
-    --table-th-bg: rgba(0, 0, 0, 0.06);
+    --table-th-bg: rgba(0, 0, 0, 0.10);
     --table-tr-bg: rgba(0, 0, 0, 0.02);
     --toolbar-gradient: linear-gradient(90deg, #f1f5ff 0%, #eaf0ff 45%, #f4ead3 100%);
     --dropdown-bg: linear-gradient(160deg, #dde3f8 0%, #ede8d8 60%, #f5edd0 100%);
@@ -356,6 +356,8 @@ body.zen-mode {
     --app-bg: #f6f8fa;
     --quote-bg: #f0f0f0;
     --code-bg: #f8f8f8;
+    --table-th-bg: #f0f0f0;
+    --table-tr-bg: #f8f8f8;
     --dropdown-bg: #ffffff;
     
     --syntax-keyword: #a626a4;

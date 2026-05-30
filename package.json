@@ -155,9 +155,10 @@
           "enum": [
             "narrow",
             "standard",
-            "wide"
+            "wide",
+            "fluid"
           ],
-          "description": "Width of the virtual A4 page."
+          "description": "Width of the virtual A4 page. 'fluid' adapts to the preview panel width."
         },
         "markdownFolio.showToolbar": {
           "type": "boolean",

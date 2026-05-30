@@ -52,6 +52,14 @@ export class MarkdownEngine {
             return `<code class="hljs code-inline">${this.highlightQuotedStrings(tokens[idx].content)}</code>`;
         };
 
+        // Wrap tables in a scrollable container for wide-table overflow
+        this.md.renderer.rules.table_open = (tokens, idx) => {
+            const sourceLine = tokens[idx].attrGet('data-source-line') ?? '';
+            const slAttr = sourceLine ? ` data-source-line="${sourceLine}"` : '';
+            return `<div class="table-wrapper"${slAttr}><table>`;
+        };
+        this.md.renderer.rules.table_close = () => '</table></div>';
+
         // Override fence renderer so data-source-line attr appears on <pre>.
         // The default fence renderer ignores token attrs when highlight() returns a full <pre>.
         // NOTE: if a future refactor replaces <pre> with <div class="mermaid">,
