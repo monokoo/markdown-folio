@@ -2,6 +2,7 @@ import MarkdownIt from 'markdown-it';
 import markdownItAnchor from 'markdown-it-anchor';
 import markdownItToc from 'markdown-it-toc-done-right';
 import markdownItKatex from '@vscode/markdown-it-katex';
+import markdownItTaskLists from 'markdown-it-task-lists';
 import hljs from 'highlight.js';
 import { slugify } from '../shared/types';
 
@@ -39,7 +40,8 @@ export class MarkdownEngine {
                 slugify: slugify
             })
             .use(markdownItToc, { containerClass: 'auto-toc', listType: 'ul' })
-            .use(markdownItKatex);
+            .use(markdownItKatex)
+            .use(markdownItTaskLists, { enabled: true });
 
         // Override validateLink to allow all image data URIs (default rejects svg+xml)
         const defaultValidateLink = this.md.validateLink.bind(this.md);

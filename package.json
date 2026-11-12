@@ -262,6 +262,7 @@
     "katex": "^0.16.38",
     "markdown-it": "^14.0.0",
     "markdown-it-anchor": "^8.6.7",
+    "markdown-it-task-lists": "^2.1.1",
     "markdown-it-toc-done-right": "^4.2.0",
     "mermaid": "^11.0.0",
     "pdf-lib": "^1.17.1",
