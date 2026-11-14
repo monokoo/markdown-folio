@@ -11,9 +11,23 @@ const targetFonts = path.join(distDir, 'fonts');
 if (!fs.existsSync(distDir)) {
     fs.mkdirSync(distDir, { recursive: true });
 }
+if (!fs.existsSync(targetFonts)) {
+    fs.mkdirSync(targetFonts, { recursive: true });
+}
 
-fs.copyFileSync(sourceCss, targetCss);
-fs.cpSync(sourceFonts, targetFonts, { recursive: true, force: true });
+// Keep only woff2 @font-face sources so HTML/PNG exports don't base64-inline redundant woff/ttf assets
+const rawKatexCss = fs.readFileSync(sourceCss, 'utf-8');
+const prunedKatexCss = rawKatexCss.replace(
+    /,url\(fonts\/[^)]+\.(?:woff|ttf)\) format\("(?:woff|truetype)"\)/g,
+    ''
+);
+fs.writeFileSync(targetCss, prunedKatexCss, 'utf-8');
+
+for (const file of fs.readdirSync(sourceFonts)) {
+    if (file.endsWith('.woff2')) {
+        fs.copyFileSync(path.join(sourceFonts, file), path.join(targetFonts, file));
+    }
+}
 
 // Copy mermaid.min.js for PDF export
 const sourceMermaid = path.join(root, 'node_modules', 'mermaid', 'dist', 'mermaid.min.js');
@@ -33,7 +47,7 @@ for (const { pkg, weights, styles, subsets } of fontSources) {
         for (const weight of weights) {
             for (const style of styles) {
                 const styleTag = style === 'normal' ? 'normal' : 'italic';
-                for (const ext of ['woff2', 'woff']) {
+                for (const ext of ['woff2']) {
                     const fname = `${pkgShort}-${subset}-${weight}-${styleTag}.${ext}`;
                     const src = path.join(filesDir, fname);
                     if (fs.existsSync(src)) {

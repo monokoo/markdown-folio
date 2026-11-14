@@ -22,6 +22,11 @@ export default defineConfig({
                 format: 'cjs',
                 entryFileNames: 'extension.js',
                 chunkFileNames: 'chunks/[name].js',
+                manualChunks(id) {
+                    if (id.includes('node_modules/highlight.js')) {
+                        return 'hljs';
+                    }
+                }
             }
         },
         target: 'node18',
