@@ -1,7 +1,48 @@
+const LINE_SPACING_PRESETS: Record<string, { lineHeight: string; paragraphSpacing: string; listItemSpacing: string }> = {
+    compact: { lineHeight: '1.5', paragraphSpacing: '0.6em', listItemSpacing: '0.16em' },
+    normal: { lineHeight: '1.72', paragraphSpacing: '1.05em', listItemSpacing: '0.28em' },
+    relaxed: { lineHeight: '2.0', paragraphSpacing: '1.45em', listItemSpacing: '0.45em' },
+};
+
+export function applyLineSpacingVars(lineSpacing?: string, root: HTMLElement = document.documentElement): void {
+    const preset = LINE_SPACING_PRESETS[lineSpacing ?? 'normal'] ?? LINE_SPACING_PRESETS.normal;
+    root.style.setProperty('--line-height-body', preset.lineHeight);
+    root.style.setProperty('--paragraph-spacing', preset.paragraphSpacing);
+    root.style.setProperty('--list-item-spacing', preset.listItemSpacing);
+}
+
+const FONT_PRESETS: Record<string, [string, string]> = {
+    System: [
+        "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif",
+        "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif",
+    ],
+    Editorial: [
+        "'DM Sans', 'PingFang SC', 'Segoe UI', system-ui, sans-serif",
+        "'Merriweather', 'Songti SC', Georgia, serif",
+    ],
+    Georgia: [
+        "'Georgia', 'Songti SC', 'Noto Serif CJK SC', 'Times New Roman', serif",
+        "'Georgia', 'Songti SC', 'Noto Serif CJK SC', 'Times New Roman', serif",
+    ],
+    Charter: [
+        "'Charter', 'Georgia', 'Songti SC', 'Noto Serif CJK SC', serif",
+        "'Charter', 'Georgia', 'Songti SC', 'Noto Serif CJK SC', serif",
+    ],
+    Songti: [
+        "'Songti SC', 'STSong', 'Noto Serif CJK SC', 'SimSun', Georgia, serif",
+        "'Songti SC', 'STSong', 'Noto Serif CJK SC', 'SimSun', Georgia, serif",
+    ],
+    Mono: [
+        "'JetBrainsMono NFM', 'JetBrainsMono Nerd Font Mono', 'JetBrains Mono', 'SFMono-Regular', Menlo, 'PingFang SC', 'Microsoft YaHei', monospace",
+        "'JetBrainsMono NFM', 'JetBrainsMono Nerd Font Mono', 'JetBrains Mono', 'SFMono-Regular', Menlo, 'PingFang SC', 'Microsoft YaHei', monospace",
+    ],
+};
+
 export class Toolbar {
     private _zoom = 1;
     private _orientation: 'portrait' | 'landscape' = 'portrait';
     private _paperSize: 'A4' | 'A3' | 'Letter' = 'A4';
+    private _activeDropdown: { toggle: HTMLElement; dropdown: HTMLElement } | null = null;
 
     constructor(private vscode: any) {
         this._initEventListeners();
@@ -34,38 +75,48 @@ export class Toolbar {
             });
         });
 
+        const getCleanContent = (): { html: string; text: string } | null => {
+            const el = document.getElementById('document-content');
+            if (!el) return null;
+            const clone = el.cloneNode(true) as HTMLElement;
+            clone.querySelectorAll('.folio-heading-tools, .folio-table-tools').forEach(node => node.remove());
+            clone.querySelectorAll('mark.folio-find-mark').forEach(mark => {
+                mark.replaceWith(document.createTextNode(mark.textContent ?? ''));
+            });
+            return {
+                html: '<div class="markdown-folio-content">\n' + clone.innerHTML + '\n</div>',
+                text: clone.innerText
+            };
+        };
+
         document.getElementById('copy-rich-html')?.addEventListener('click', async () => {
             this._closeAllDropdowns();
+            const clean = getCleanContent();
+            if (!clean) return;
             try {
-                const el = document.getElementById('document-content');
-                if (!el) return;
-                const htmlStr = '<div class="markdown-folio-content">\n' + el.innerHTML + '\n</div>';
-                const textStr = el.innerText;
                 if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
                     throw new Error('Rich clipboard is not available');
                 }
                 const item = new ClipboardItem({
-                    'text/html': new Blob([htmlStr], { type: 'text/html' }),
-                    'text/plain': new Blob([textStr], { type: 'text/plain' })
+                    'text/html': new Blob([clean.html], { type: 'text/html' }),
+                    'text/plain': new Blob([clean.text], { type: 'text/plain' })
                 });
                 await navigator.clipboard.write([item]);
                 this._flashCopyButton(document.getElementById('copy-dropdown-toggle'), 'Copied');
             } catch (err) {
-                const el = document.getElementById('document-content');
-                this.vscode.postMessage({ type: 'copy', payload: { mode: 'rich-html-fallback', html: el ? '<div class="markdown-folio-content">\n' + el.innerHTML + '\n</div>' : '', text: el ? el.innerText : '' } });
+                this.vscode.postMessage({ type: 'copy', payload: { mode: 'rich-html-fallback', html: clean.html, text: clean.text } });
             }
         });
 
         document.getElementById('copy-plain-text')?.addEventListener('click', async () => {
             this._closeAllDropdowns();
+            const clean = getCleanContent();
+            if (!clean) return;
             try {
-                const el = document.getElementById('document-content');
-                if (!el) return;
-                await navigator.clipboard.writeText(el.innerText);
+                await navigator.clipboard.writeText(clean.text);
                 this._flashCopyButton(document.getElementById('copy-dropdown-toggle'), 'Copied');
             } catch (err) {
-                const el = document.getElementById('document-content');
-                this.vscode.postMessage({ type: 'copy', payload: { mode: 'plain-text-fallback', text: el ? el.innerText : '' } });
+                this.vscode.postMessage({ type: 'copy', payload: { mode: 'plain-text-fallback', text: clean.text } });
             }
         });
 
@@ -112,6 +163,23 @@ export class Toolbar {
                 this._closeAllDropdowns();
             }
         });
+
+        window.addEventListener('resize', () => {
+            if (this._activeDropdown && this._activeDropdown.dropdown.classList.contains('show')) {
+                this._positionDropdown(this._activeDropdown.toggle, this._activeDropdown.dropdown);
+            }
+        });
+    }
+
+    private _positionDropdown(toggle: HTMLElement, dropdown: HTMLElement) {
+        const toggleRect = toggle.getBoundingClientRect();
+        const dropdownRect = dropdown.getBoundingClientRect();
+        const top = toggleRect.bottom + 8;
+        let left = toggleRect.left + (toggleRect.width - dropdownRect.width) / 2;
+        left = Math.max(12, Math.min(left, window.innerWidth - dropdownRect.width - 12));
+        dropdown.style.right = 'auto';
+        dropdown.style.left = `${Math.round(left)}px`;
+        dropdown.style.top = `${Math.round(top)}px`;
     }
 
     private _initDropdown(toggleId: string, dropdownId: string) {
@@ -127,6 +195,8 @@ export class Toolbar {
             this._closeAllDropdowns();
             if (willOpen) {
                 dropdown.classList.add('show');
+                this._activeDropdown = { toggle, dropdown };
+                this._positionDropdown(toggle, dropdown);
             }
         });
 
@@ -175,15 +245,12 @@ export class Toolbar {
                 });
 
                 if (group === 'font') {
-                    const fontMap: Record<string, [string, string]> = {
-                        'Georgia': ["'Georgia', 'Times New Roman', serif", "'Georgia', 'Times New Roman', serif"],
-                        'Inter': ["'Inter', 'Segoe UI', sans-serif", "'Inter', 'Segoe UI', sans-serif"],
-                        'Roboto': ["'Roboto', 'Segoe UI', sans-serif", "'Roboto', 'Segoe UI', sans-serif"],
-                    };
                     if (wasActive) {
                         // Deselect → reset to defaults
                         document.documentElement.style.removeProperty('--font-body');
                         document.documentElement.style.removeProperty('--font-heading');
+                        document.documentElement.style.removeProperty('--custom-font-body');
+                        document.documentElement.style.removeProperty('--custom-font-heading');
                         this.vscode.postMessage({
                             type: 'update-settings',
                             payload: {
@@ -193,10 +260,12 @@ export class Toolbar {
                         });
                     } else {
                         chip.classList.add('active');
-                        const pair = fontMap[chip.textContent?.trim() || ''];
+                        const pair = FONT_PRESETS[chip.textContent?.trim() || ''];
                         if (pair) {
                             document.documentElement.style.setProperty('--font-body', pair[0]);
                             document.documentElement.style.setProperty('--font-heading', pair[1]);
+                            document.documentElement.style.setProperty('--custom-font-body', pair[0]);
+                            document.documentElement.style.setProperty('--custom-font-heading', pair[1]);
                             this.vscode.postMessage({
                                 type: 'update-settings',
                                 payload: { bodyFont: pair[0], headingFont: pair[1] }
@@ -237,19 +306,25 @@ export class Toolbar {
 
                 if (group === 'line-spacing') {
                     const value = chip.dataset.value as 'compact' | 'normal' | 'relaxed';
-                    const map = { compact: '1.5', normal: '1.72', relaxed: '2.0' };
-                    document.documentElement.style.setProperty('--line-height-body', map[value]);
+                    applyLineSpacingVars(value);
                     this.vscode.postMessage({ type: 'update-settings', payload: { lineSpacing: value } });
                 }
 
                 if (group === 'page-width') {
-                    const value = chip.dataset.value as 'narrow' | 'standard' | 'wide';
+                    const value = chip.dataset.value as 'narrow' | 'standard' | 'wide' | 'fluid' | 'full';
                     const paper = document.getElementById('document-paper');
                     if (paper) {
                         paper.className = paper.className.replace(/width-\w+/g, '').trim();
                         paper.classList.add(`width-${value}`);
                     }
+                    document.body.classList.toggle('page-width-full', value === 'full');
                     this.vscode.postMessage({ type: 'update-settings', payload: { pageWidth: value } });
+                }
+
+                if (group === 'table-wrap') {
+                    const threshold = parseInt(chip.dataset.value || '320', 10);
+                    document.dispatchEvent(new CustomEvent('markdown-folio:table-threshold-changed', { detail: { threshold } }));
+                    this.vscode.postMessage({ type: 'update-settings', payload: { tableWrapThreshold: threshold } });
                 }
             });
         });
@@ -263,11 +338,29 @@ export class Toolbar {
                     const sidebar = document.getElementById('sidebar-toc');
                     const isVisible = toggle.classList.contains('on');
                     if (sidebar) {
+                        sidebar.classList.remove('sidebar-collapsed');
                         sidebar.style.display = isVisible ? '' : 'none';
+                        if (window.innerWidth <= 960 && isVisible) {
+                            sidebar.classList.add('drawer-open');
+                            document.getElementById('toc-backdrop')?.classList.add('show');
+                        } else if (!isVisible) {
+                            sidebar.classList.remove('drawer-open');
+                            document.getElementById('toc-backdrop')?.classList.remove('show');
+                        }
                     }
                     this.vscode.postMessage({
                         type: 'update-settings',
                         payload: { showTocSidebar: isVisible }
+                    });
+                }
+
+                if (toggle.dataset.action === 'click-inline-code-copy') {
+                    const isEnabled = toggle.classList.contains('on');
+                    document.body.classList.toggle('inline-code-copy-enabled', isEnabled);
+                    document.dispatchEvent(new CustomEvent('markdown-folio:inline-copy-changed', { detail: { enabled: isEnabled } }));
+                    this.vscode.postMessage({
+                        type: 'update-settings',
+                        payload: { clickInlineCodeCopy: isEnabled }
                     });
                 }
             });
@@ -278,13 +371,20 @@ export class Toolbar {
         const zoomIn = document.getElementById('zoom-in');
         const zoomOut = document.getElementById('zoom-out');
         const zoomLabel = document.getElementById('zoom-label');
+        const collapsedMeta = document.getElementById('toolbar-collapsed-meta');
 
         const applyZoom = () => {
+            const isZoomed = Math.abs(this._zoom - 1) > 0.001;
+            document.body.classList.toggle('is-zoomed', isZoomed);
             document.documentElement.style.setProperty('--zoom-scale', this._zoom.toFixed(2));
+            const pct = `${Math.round(this._zoom * 100)}%`;
             if (zoomLabel) {
-                zoomLabel.textContent = `${Math.round(this._zoom * 100)}%`;
+                zoomLabel.textContent = pct;
             }
-            // Notify ScrollSync that zoom changed — getBoundingClientRect positions shift
+            if (collapsedMeta) {
+                collapsedMeta.textContent = pct;
+            }
+            // Notify ScrollSync & layout observer that zoom changed
             document.dispatchEvent(new CustomEvent('markdown-folio:zoom-changed', { detail: { zoom: this._zoom } }));
         };
 
@@ -315,18 +415,21 @@ export class Toolbar {
         fontSize?: number;
         headingSize?: 'S' | 'M' | 'L';
         showTocSidebar?: boolean;
+        clickInlineCodeCopy?: boolean;
         theme?: 'admiral' | 'ivory' | 'serene' | 'cyberpunk' | 'dracula' | 'github' | 'zen';
         bodyFont?: string;
         lineSpacing?: 'compact' | 'normal' | 'relaxed';
-        pageWidth?: 'narrow' | 'standard' | 'wide';
+        pageWidth?: 'narrow' | 'standard' | 'wide' | 'fluid' | 'full';
+        tableWrapThreshold?: number;
     }) {
         // Sync font chips
         if (settings.bodyFont !== undefined) {
             const fontReverseMap: Record<string, string> = {
                 "'Georgia', 'Times New Roman', serif": 'Georgia',
-                "'Inter', 'Segoe UI', sans-serif": 'Inter',
-                "'Roboto', 'Segoe UI', sans-serif": 'Roboto',
             };
+            for (const [label, [bodyFont]] of Object.entries(FONT_PRESETS)) {
+                fontReverseMap[bodyFont] = label;
+            }
             const activeLabel = fontReverseMap[settings.bodyFont];
             document.querySelectorAll<HTMLElement>('.set-chip[data-group="font"]').forEach(chip => {
                 chip.classList.toggle('active', chip.textContent?.trim() === activeLabel);
@@ -365,11 +468,27 @@ export class Toolbar {
             });
         }
 
+        // Sync table wrap threshold chips
+        if (settings.tableWrapThreshold !== undefined) {
+            const valStr = String(settings.tableWrapThreshold);
+            document.querySelectorAll<HTMLElement>('.set-chip[data-group="table-wrap"]').forEach(c => {
+                c.classList.toggle('active', c.dataset.value === valStr);
+            });
+        }
+
         // Sync TOC sidebar toggle
         if (settings.showTocSidebar !== undefined) {
             const toggle = document.querySelector<HTMLElement>('.set-toggle[data-action="toc-sidebar"]');
             if (toggle) {
                 toggle.classList.toggle('on', settings.showTocSidebar);
+            }
+        }
+
+        // Sync Click code copy toggle
+        if (settings.clickInlineCodeCopy !== undefined) {
+            const toggle = document.querySelector<HTMLElement>('.set-toggle[data-action="click-inline-code-copy"]');
+            if (toggle) {
+                toggle.classList.toggle('on', settings.clickInlineCodeCopy);
             }
         }
 
@@ -394,24 +513,33 @@ export class Toolbar {
 
     private _closeAllDropdowns() {
         document.querySelectorAll('.dropdown-menu.show').forEach(dropdown => dropdown.classList.remove('show'));
+        this._activeDropdown = null;
     }
 
     private _initToolbarToggle() {
         const toggle = document.getElementById('toolbar-toggle');
+        const collapsedMeta = document.getElementById('toolbar-collapsed-meta');
         const toolbar = document.getElementById('toolbar');
+        const docContainer = document.getElementById('document-container');
         if (!toggle || !toolbar) return;
 
-        toggle.addEventListener('click', (e) => {
+        const handleToggle = (e: Event) => {
             e.stopPropagation();
             toolbar.classList.toggle('collapsed');
-            
+            const isCollapsed = toolbar.classList.contains('collapsed');
+
+            if (isCollapsed) {
+                this._closeAllDropdowns();
+            }
+
+            docContainer?.classList.toggle('toolbar-collapsed', isCollapsed);
+
             // Re-sync position
             const syncPos = (window as any).syncToolbarPosition;
             if (typeof syncPos === 'function') {
                 syncPos();
             }
 
-            const isCollapsed = toolbar.classList.contains('collapsed');
             toggle.title = isCollapsed ? 'Expand Toolbar' : 'Collapse Toolbar';
 
             const icon = toggle.querySelector('svg path');
@@ -422,6 +550,9 @@ export class Toolbar {
                     icon.setAttribute('d', 'M9 5l7 7-7 7'); // > (To Collapse)
                 }
             }
-        });
+        };
+
+        toggle.addEventListener('click', handleToggle);
+        collapsedMeta?.addEventListener('click', handleToggle);
     }
 }

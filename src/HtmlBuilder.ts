@@ -8,7 +8,7 @@ export interface PdfSettings {
     fontSize?: number;
     headingSize?: 'S' | 'M' | 'L';
     lineSpacing?: string;
-    pageWidth?: 'narrow' | 'standard' | 'wide';
+    pageWidth?: 'narrow' | 'standard' | 'wide' | 'fluid' | 'full';
     showToolbar?: boolean;
     showTocSidebar?: boolean;
     theme?: 'admiral' | 'ivory' | 'serene' | 'cyberpunk' | 'dracula' | 'github' | 'zen';
@@ -121,6 +121,7 @@ export class HtmlBuilder {
         const pageWidth = settings?.pageWidth || 'standard';
         const bodyClasses = [
             bodyClass,
+            pageWidth === 'full' ? 'page-width-full' : '',
             exportOptions?.compactPaper ? 'export-compact-paper' : '',
             exportOptions?.pngCapture ? 'export-png-capture' : '',
         ].filter(Boolean).join(' ');
@@ -475,7 +476,7 @@ body.${themeName}-mode hr {
             const text = item.text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
             return `<div class="toc-item level-${item.level}"><a href="#${item.slug}">${text}</a></div>`;
         }).join('\n');
-        return `<div class="toc-header">Contents</div>\n${items}`;
+        return `<div class="toc-header">Contents</div>\n<div class="toc-list">\n${items}\n</div>`;
     }
 
     private static _inlineFontUrls(css: string, distDir: string, pattern: RegExp): string {
@@ -494,10 +495,13 @@ body.${themeName}-mode hr {
         if (!settings) { return ''; }
 
         const lines: string[] = [];
-        const themeControlsFonts = settings.theme === 'zen';
+        const isZen = settings.theme === 'zen';
+        const defaultHeadingFont = "'Merriweather', Georgia, serif";
+        const defaultBodyFont = "'DM Sans', 'Segoe UI', system-ui, sans-serif";
 
-        if (settings.headingFont && !themeControlsFonts) {
-            lines.push(`h1, h3, h4, h5, h6 { font-family: ${settings.headingFont}, Georgia, serif; }`);
+        if (settings.headingFont && (!isZen || settings.headingFont !== defaultHeadingFont)) {
+            lines.push(`:root { --custom-font-heading: ${settings.headingFont}; --font-heading: ${settings.headingFont}; }`);
+            lines.push(`h1, h2, h3, h4, h5, h6 { font-family: ${settings.headingFont}, Georgia, serif; }`);
         }
         if (settings.headingSize) {
             const hMap: Record<string, [string, string, string]> = usePt
@@ -506,7 +510,8 @@ body.${themeName}-mode hr {
             const [h1, h2, h3] = hMap[settings.headingSize] ?? hMap['M'];
             lines.push(`h1 { font-size: ${h1}; } h2 { font-size: ${h2}; } h3, h4, h5, h6 { font-size: ${h3}; }`);
         }
-        if (settings.bodyFont && !themeControlsFonts) {
+        if (settings.bodyFont && (!isZen || settings.bodyFont !== defaultBodyFont)) {
+            lines.push(`:root { --custom-font-body: ${settings.bodyFont}; --font-body: ${settings.bodyFont}; }`);
             lines.push(`body, #document-content { font-family: ${settings.bodyFont}, 'Segoe UI', system-ui, sans-serif; }`);
         }
         if (settings.fontSize) {
@@ -519,9 +524,15 @@ body.${themeName}-mode hr {
             }
         }
         if (settings.lineSpacing) {
-            const lineHeightMap: Record<string, string> = { compact: '1.5', normal: '1.72', relaxed: '2.0' };
-            const lh = lineHeightMap[settings.lineSpacing] ?? '1.72';
+            const spacingMap: Record<string, { lh: string; pGap: string; liGap: string }> = {
+                compact: { lh: '1.5', pGap: '0.6em', liGap: '0.16em' },
+                normal: { lh: '1.72', pGap: '1.05em', liGap: '0.28em' },
+                relaxed: { lh: '2.0', pGap: '1.45em', liGap: '0.45em' },
+            };
+            const { lh, pGap, liGap } = spacingMap[settings.lineSpacing] ?? spacingMap.normal;
+            lines.push(`:root { --line-height-body: ${lh}; --paragraph-spacing: ${pGap}; --list-item-spacing: ${liGap}; }`);
             lines.push(`body { line-height: ${lh}; }`);
+            lines.push(`#document-content p { margin: ${pGap} 0; } #document-content li { margin-bottom: ${liGap}; }`);
         }
 
         return lines.join('\n');

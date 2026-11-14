@@ -1,22 +1,110 @@
 #sidebar-toc {
-    width: 240px;
+    width: 244px;
     height: 100vh;
     background: var(--sidebar-bg);
     border-right: 1px solid var(--border-color);
-    overflow-y: auto;
-    padding: 72px 0 20px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0;
+    flex-shrink: 0;
+    transition: width 0.2s ease, transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#sidebar-toc.sidebar-collapsed {
+    display: none !important;
+}
+
+.toc-header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px 10px;
+    border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
 }
 
+.toc-header-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.toc-header-title,
 .toc-header {
-    padding: 8px 14px 10px;
-    font-size: 10px;
+    font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-weight: 700;
     color: var(--text-muted);
+}
+
+.toc-header {
+    padding: 12px 14px 10px;
     border-bottom: 1px solid var(--border-color);
-    margin-bottom: 8px;
+    margin-bottom: 6px;
+}
+
+.toc-count-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--gold-color) 16%, transparent);
+    color: var(--gold-color);
+}
+
+.toc-close-btn {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 16px;
+    line-height: 1;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.toc-close-btn:hover {
+    background: var(--toc-item-hover-bg);
+    color: var(--text-primary);
+}
+
+.toc-search-wrap {
+    padding: 8px 12px 4px;
+    flex-shrink: 0;
+}
+
+.toc-search-input {
+    width: 100%;
+    padding: 5px 9px;
+    font-size: 11.5px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: color-mix(in oklab, var(--bg-secondary, #ffffff) 65%, transparent);
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 0.15s ease;
+}
+
+.toc-search-input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+.toc-search-input:focus {
+    border-color: var(--gold-color);
+}
+
+.toc-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 0 20px;
 }
 
 .toc-item {
@@ -27,6 +115,9 @@
     cursor: pointer;
     border-left: 2px solid transparent;
     line-height: 1.45;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     transition: all 0.16s ease;
 }
 
@@ -114,8 +205,75 @@
     background: color-mix(in oklab, var(--gold-color) 55%, transparent);
 }
 
-@media (max-width: 1200px) {
+.toc-drawer-fab {
+    position: fixed;
+    top: 14px;
+    left: 16px;
+    z-index: 998;
+    display: none;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--toolbar-border);
+    background: var(--toolbar-gradient, var(--toolbar-bg));
+    color: var(--gold-color);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+    transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+body.zen-mode .toc-drawer-fab,
+body.light-mode .toc-drawer-fab {
+    backdrop-filter: none;
+}
+
+.toc-drawer-fab.visible {
+    display: inline-flex;
+}
+
+.toc-drawer-fab:hover {
+    transform: translateY(-1px);
+}
+
+.toc-drawer-fab svg {
+    width: 14px;
+    height: 14px;
+}
+
+.toc-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.32);
+    backdrop-filter: blur(2px);
+    z-index: 1008;
+    display: none;
+}
+
+.toc-backdrop.show {
+    display: block;
+}
+
+@media (max-width: 960px) {
     #sidebar-toc {
-        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        z-index: 1010;
+        transform: translateX(-100%);
+        box-shadow: none;
+    }
+
+    #sidebar-toc.drawer-open {
+        transform: translateX(0);
+        box-shadow: 12px 0 36px rgba(0, 0, 0, 0.42);
+    }
+
+    .toc-drawer-fab {
+        display: inline-flex;
     }
 }

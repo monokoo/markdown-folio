@@ -6,11 +6,13 @@ export interface PreviewSettings {
     fontSize: number;
     headingSize: 'S' | 'M' | 'L';
     lineSpacing: 'compact' | 'normal' | 'relaxed';
-    pageWidth: 'narrow' | 'standard' | 'wide';
+    pageWidth: 'narrow' | 'standard' | 'wide' | 'fluid' | 'full';
     showToolbar: boolean;
     showTocSidebar: boolean;
     theme: 'admiral' | 'ivory' | 'serene' | 'cyberpunk' | 'dracula' | 'github' | 'zen';
     scrollSync: boolean;
+    tableWrapThreshold: number;
+    clickInlineCodeCopy: boolean;
 }
 
 const DEFAULTS: PreviewSettings = {
@@ -24,6 +26,8 @@ const DEFAULTS: PreviewSettings = {
     showTocSidebar: true,
     theme: 'ivory',
     scrollSync: true,
+    tableWrapThreshold: 320,
+    clickInlineCodeCopy: true,
 };
 
 export class SettingsManager {
@@ -37,12 +41,21 @@ export class SettingsManager {
             fontSize: cfg.get<number>('fontSize', DEFAULTS.fontSize),
             headingSize: cfg.get<'S' | 'M' | 'L'>('headingSize', DEFAULTS.headingSize),
             lineSpacing: cfg.get<'compact' | 'normal' | 'relaxed'>('lineSpacing', DEFAULTS.lineSpacing),
-            pageWidth: cfg.get<'narrow' | 'standard' | 'wide'>('pageWidth', DEFAULTS.pageWidth),
+            pageWidth: cfg.get<'narrow' | 'standard' | 'wide' | 'fluid' | 'full'>('pageWidth', DEFAULTS.pageWidth),
             showToolbar: cfg.get<boolean>('showToolbar', DEFAULTS.showToolbar),
             showTocSidebar: cfg.get<boolean>('showTocSidebar', DEFAULTS.showTocSidebar),
             theme: cfg.get<'admiral' | 'ivory' | 'serene' | 'cyberpunk' | 'dracula' | 'github' | 'zen'>('theme', DEFAULTS.theme),
             scrollSync: cfg.get<boolean>('scrollSync', DEFAULTS.scrollSync),
+            tableWrapThreshold: SettingsManager._clampThreshold(cfg.get<number>('tableWrapThreshold', DEFAULTS.tableWrapThreshold)),
+            clickInlineCodeCopy: cfg.get<boolean>('clickInlineCodeCopy', DEFAULTS.clickInlineCodeCopy),
         };
+    }
+
+    private static _clampThreshold(value: number): number {
+        if (!Number.isFinite(value) || value <= 0) {
+            return 0;
+        }
+        return Math.max(120, Math.min(800, Math.round(value)));
     }
 
     static async update(partial: Partial<PreviewSettings>): Promise<void> {

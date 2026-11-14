@@ -1,16 +1,22 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { MarkdownEngine } from './engine/MarkdownEngine';
 import { PathResolver } from './utils/pathResolver';
 import { FrontmatterParser } from './engine/FrontmatterParser';
-import { TocGenerator } from './engine/TocGenerator';
 import { debounce } from './utils/debounce';
 import { SettingsManager } from './SettingsManager';
 import { HtmlBuilder } from './HtmlBuilder';
 import { HtmlExporter } from './HtmlExporter';
 
 export class PreviewPanel {
-    private static readonly _markdownEngine = new MarkdownEngine();
+    private static _markdownEngineInstance?: MarkdownEngine;
+    private static get _markdownEngine(): MarkdownEngine {
+        if (!PreviewPanel._markdownEngineInstance) {
+            PreviewPanel._markdownEngineInstance = new MarkdownEngine();
+        }
+        return PreviewPanel._markdownEngineInstance;
+    }
     public static currentPanel: PreviewPanel | undefined;
     private readonly _panel: vscode.WebviewPanel;
     private readonly _extensionUri: vscode.Uri;
@@ -18,11 +24,21 @@ export class PreviewPanel {
     private _disposables: vscode.Disposable[] = [];
     private _debounceUpdate = debounce(() => this._update(), 300);
     private _hasPendingRender = true;
+    private _hasPendingSettings = false;
     private _htmlInitialized = false;
     private _webviewReady = false;
     private _lastRenderedHtml = '';
     private _lastToc: import('./shared/types').TocItem[] = [];
     private _lastTitle = '';
+    private _cachedDocKey = '';
+    private _cachedRender: {
+        html: string;
+        toc: import('./shared/types').TocItem[];
+        metadata: { title?: string; author?: string; date?: string };
+        title: string;
+        panelTitle: string;
+    } | null = null;
+    private _lastDeliveredKey = '';
     private _scrollEventCounter = 0;
     private _scrollThrottleTimer: NodeJS.Timeout | null = null;
     private _pendingScrollLine = 0;
@@ -60,11 +76,22 @@ export class PreviewPanel {
 
         // If we already have a panel, show it.
         if (PreviewPanel.currentPanel) {
-            PreviewPanel.currentPanel._document = document;
-            PreviewPanel.currentPanel._panel.webview.options = PreviewPanel._getWebviewOptions(context.extensionUri, document);
-            PreviewPanel.currentPanel._hasPendingRender = true;
-            PreviewPanel.currentPanel._update();
-            PreviewPanel.currentPanel._panel.reveal(column);
+            const current = PreviewPanel.currentPanel;
+            const docChanged = current._document.uri.toString() !== document.uri.toString();
+            current._document = document;
+            if (docChanged) {
+                current._panel.webview.options = PreviewPanel._getWebviewOptions(context.extensionUri, document);
+                current._lastRenderedHtml = '';
+                current._cachedDocKey = '';
+                current._cachedRender = null;
+                current._lastDeliveredKey = '';
+                current._hasPendingRender = true;
+                current._panel.title = `Preview: ${path.basename(document.fileName)}`;
+            }
+            current._panel.reveal(column);
+            if (current._hasPendingRender || current._hasPendingSettings) {
+                current._update();
+            }
             return;
         }
 
@@ -94,9 +121,9 @@ export class PreviewPanel {
         // This happens when the user closes the panel or when the panel is closed programmatically
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
-        // Listen for file changes
+        // Listen for file changes (skip metadata-only changes such as dirty/save events)
         vscode.workspace.onDidChangeTextDocument(e => {
-            if (e.document === this._document) {
+            if (e.document === this._document && e.contentChanges.length > 0) {
                 this._hasPendingRender = true;
                 this._debounceUpdate();
             }
@@ -104,8 +131,15 @@ export class PreviewPanel {
 
         // Listen for view state changes
         this._panel.onDidChangeViewState(() => {
-            if (this._panel.visible && this._hasPendingRender) {
+            if (!this._panel.visible) { return; }
+            if (this._hasPendingRender) {
                 this._update();
+            } else if (this._hasPendingSettings && this._webviewReady) {
+                this._hasPendingSettings = false;
+                this._panel.webview.postMessage({
+                    type: 'settings-updated',
+                    payload: SettingsManager.read()
+                });
             }
         }, null, this._disposables);
 
@@ -175,20 +209,27 @@ export class PreviewPanel {
                         this._handleRevealLine(message.payload);
                         return;
                     }
+                    case 'open-workspace-file': {
+                        this._handleOpenWorkspaceFile(message.payload);
+                        return;
+                    }
                 }
             },
             null,
             this._disposables
         );
 
-        // Listen for VS Code settings changes → push to webview immediately
+        // Listen for VS Code settings changes → push to webview immediately or defer until visible
         this._disposables.push(
             SettingsManager.onDidChange(settings => {
-                if (this._panel.visible) {
+                if (this._panel.visible && this._webviewReady) {
+                    this._hasPendingSettings = false;
                     this._panel.webview.postMessage({
                         type: 'settings-updated',
                         payload: settings
                     });
+                } else {
+                    this._hasPendingSettings = true;
                 }
             })
         );
@@ -238,6 +279,77 @@ export class PreviewPanel {
             new vscode.Range(line, 0, line, 0),
             vscode.TextEditorRevealType.AtTop
         );
+    }
+
+    private async _handleOpenWorkspaceFile(payload: { path?: string }): Promise<void> {
+        const rawPath = typeof payload?.path === 'string' ? payload.path.trim() : '';
+        if (!rawPath) { return; }
+
+        const match = rawPath.match(/^(.+?)(?::(\d+)(?::(\d+))?)?$/);
+        const filePart = match?.[1] ?? rawPath;
+        const lineNum = match?.[2] ? Math.max(0, parseInt(match[2], 10) - 1) : undefined;
+        const colNum = match?.[3] ? Math.max(0, parseInt(match[3], 10) - 1) : 0;
+
+        const docDir = path.dirname(this._document.fileName);
+        const candidates: string[] = [];
+        if (path.isAbsolute(filePart)) {
+            candidates.push(filePart);
+        } else {
+            candidates.push(path.resolve(docDir, filePart));
+            const wsFolder = vscode.workspace.getWorkspaceFolder(this._document.uri)?.uri.fsPath;
+            if (wsFolder) {
+                candidates.push(path.resolve(wsFolder, filePart));
+            }
+            for (const folder of vscode.workspace.workspaceFolders ?? []) {
+                candidates.push(path.resolve(folder.uri.fsPath, filePart));
+            }
+            let cur = docDir;
+            for (let i = 0; i < 4; i++) {
+                const parent = path.dirname(cur);
+                if (!parent || parent === cur) { break; }
+                candidates.push(path.resolve(parent, filePart));
+                cur = parent;
+            }
+        }
+
+        const seen = new Set<string>();
+        let targetPath: string | null = null;
+        for (const candidate of candidates) {
+            if (seen.has(candidate)) { continue; }
+            seen.add(candidate);
+            try {
+                if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+                    targetPath = candidate;
+                    break;
+                }
+            } catch {
+                // ignore unreadable candidate path
+            }
+        }
+
+        if (!targetPath) {
+            this._panel.webview.postMessage({
+                type: 'toast',
+                payload: { message: `未找到工作区文件：${filePart}`, tone: 'warn' }
+            });
+            return;
+        }
+
+        const uri = vscode.Uri.file(targetPath);
+        try {
+            if (lineNum !== undefined) {
+                const doc = await vscode.workspace.openTextDocument(uri);
+                const pos = new vscode.Position(lineNum, colNum);
+                await vscode.window.showTextDocument(doc, {
+                    preview: false,
+                    selection: new vscode.Range(pos, pos)
+                });
+            } else {
+                await vscode.commands.executeCommand('vscode.open', uri);
+            }
+        } catch (err: any) {
+            vscode.window.showErrorMessage(`Markdown Folio: 无法打开文件 ${filePart} — ${err?.message ?? err}`);
+        }
     }
 
     private async _handleExportPdf(
@@ -470,43 +582,64 @@ export class PreviewPanel {
     }
 
     private _update() {
-        const webview = this._panel.webview;
-        const documentContent = this._document.getText();
-        const documentDir = path.dirname(this._document.fileName);
-
-        const { title, author, date, content, lineOffset } = FrontmatterParser.extract(documentContent);
-        const previewContent = PathResolver.resolveImagesForWebview(content, documentDir, webview);
-        const toc = TocGenerator.extract(content);
-
-        const html = PreviewPanel._markdownEngine.render(previewContent, lineOffset);
-        this._lastRenderedHtml = html;
-        this._lastToc = toc;
-        this._lastTitle = title || path.basename(this._document.fileName, '.md');
-
-        // Update panel title
-        this._panel.title = `Preview: ${title || path.basename(this._document.fileName)}`;
-
         this._initializeWebview();
 
-        if (this._panel.visible && this._webviewReady) {
-            const settings = SettingsManager.read();
-            this._panel.webview.postMessage({
-                type: 'render',
-                payload: {
-                    html: html,
-                    toc: toc,
-                    metadata: { title, author, date },
-                    config: settings
-                }
-            });
-            this._hasPendingRender = false;
+        if (!this._panel.visible || !this._webviewReady) {
+            this._hasPendingRender = true;
+            return;
         }
+
+        const docKey = `${this._document.uri.toString()}::${this._document.version}`;
+        if (this._lastDeliveredKey === docKey && !this._hasPendingSettings && !this._hasPendingRender) {
+            return;
+        }
+
+        let rendered = this._cachedDocKey === docKey ? this._cachedRender : null;
+        if (!rendered) {
+            const webview = this._panel.webview;
+            const documentContent = this._document.getText();
+            const documentDir = path.dirname(this._document.fileName);
+
+            const { title, author, date, content, lineOffset } = FrontmatterParser.extract(documentContent);
+            const previewContent = PathResolver.resolveImagesForWebview(content, documentDir, webview);
+            const { html, toc } = PreviewPanel._markdownEngine.renderWithToc(previewContent, lineOffset);
+
+            rendered = {
+                html,
+                toc,
+                metadata: { title, author, date },
+                title: title || path.basename(this._document.fileName, '.md'),
+                panelTitle: `Preview: ${title || path.basename(this._document.fileName)}`
+            };
+            this._cachedDocKey = docKey;
+            this._cachedRender = rendered;
+        }
+
+        this._lastRenderedHtml = rendered.html;
+        this._lastToc = rendered.toc;
+        this._lastTitle = rendered.title;
+        this._panel.title = rendered.panelTitle;
+
+        const settings = SettingsManager.read();
+        this._panel.webview.postMessage({
+            type: 'render',
+            payload: {
+                html: rendered.html,
+                toc: rendered.toc,
+                metadata: rendered.metadata,
+                config: settings
+            }
+        });
+        this._lastDeliveredKey = docKey;
+        this._hasPendingRender = false;
+        this._hasPendingSettings = false;
     }
 
     private _getHtmlForWebview(webview: vscode.Webview): string {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview.js'));
         const katexCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'katex.css'));
         const mermaidUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'mermaid.min.js'));
+        const fontsBaseUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'dist', 'fonts'));
         const nonce = getNonce();
 
         return `<!DOCTYPE html>
@@ -514,14 +647,53 @@ export class PreviewPanel {
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data: https:; script-src 'nonce-${nonce}' ${webview.cspSource}; style-src 'unsafe-inline' ${webview.cspSource} https://fonts.googleapis.com; font-src ${webview.cspSource} https://fonts.gstatic.com https:;">
-                <link rel="preconnect" href="https://fonts.googleapis.com">
-                <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-                <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&family=Inter:wght@400;500;600&family=Merriweather:wght@400;700&family=Roboto:wght@400;500;700&display=swap">
+                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data: https:; script-src 'nonce-${nonce}' ${webview.cspSource}; style-src 'unsafe-inline' ${webview.cspSource}; font-src ${webview.cspSource} data:;">
+                <style>
+                    @font-face {
+                        font-family: 'DM Sans';
+                        font-style: normal;
+                        font-weight: 400;
+                        font-display: swap;
+                        src: url('${fontsBaseUri}/dm-sans-latin-400-normal.woff2') format('woff2');
+                    }
+                    @font-face {
+                        font-family: 'DM Sans';
+                        font-style: normal;
+                        font-weight: 500;
+                        font-display: swap;
+                        src: url('${fontsBaseUri}/dm-sans-latin-500-normal.woff2') format('woff2');
+                    }
+                    @font-face {
+                        font-family: 'DM Serif Display';
+                        font-style: normal;
+                        font-weight: 400;
+                        font-display: swap;
+                        src: url('${fontsBaseUri}/dm-serif-display-latin-400-normal.woff2') format('woff2');
+                    }
+                    @font-face {
+                        font-family: 'Merriweather';
+                        font-style: normal;
+                        font-weight: 400;
+                        font-display: swap;
+                        src: url('${fontsBaseUri}/merriweather-latin-400-normal.woff2') format('woff2');
+                    }
+                    @font-face {
+                        font-family: 'Merriweather';
+                        font-style: normal;
+                        font-weight: 700;
+                        font-display: swap;
+                        src: url('${fontsBaseUri}/merriweather-latin-700-normal.woff2') format('woff2');
+                    }
+                </style>
                 <link rel="stylesheet" href="${katexCssUri}">
                 <title>Markdown Folio Preview</title>
             </head>
             <body data-mermaid-src="${mermaidUri}">
+                <div id="reading-progress-bar"></div>
+                <button id="toc-drawer-toggle" class="toc-drawer-fab" title="Toggle Table of Contents">
+                    <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+                    <span>Contents</span>
+                </button>
                 <div id="toolbar" class="collapsed">
                     <button class="export-pill export-pdf-toggle" id="pdf-dropdown-toggle" title="Export PDF">
                         Export PDF <svg class="dropdown-icon" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -551,6 +723,10 @@ export class PreviewPanel {
                         <svg class="dropdown-icon" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </button>
                     <div class="toolbar-sep"></div>
+                    <button class="toolbar-btn" id="toolbar-find-btn" title="页内检索 (Cmd/Ctrl+F)">
+                        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                    </button>
+                    <span id="toolbar-collapsed-meta" class="toolbar-collapsed-meta" title="Expand Toolbar">100%</span>
                     <button class="toolbar-btn" id="toolbar-toggle" title="Expand Toolbar">
                         <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </button>
@@ -617,12 +793,15 @@ export class PreviewPanel {
                 <div id="settings-dropdown" class="dropdown-menu">
                     <div class="popover-group">
                         <div class="pop-section-label">Typography</div>
-                        <div class="set-row">
+                        <div class="set-row set-row-font">
                             <span class="set-row-label">Font</span>
                             <div class="set-chips">
+                                <button class="set-chip" data-group="font">System</button>
+                                <button class="set-chip" data-group="font">Editorial</button>
                                 <button class="set-chip" data-group="font">Georgia</button>
-                                <button class="set-chip" data-group="font">Inter</button>
-                                <button class="set-chip" data-group="font">Roboto</button>
+                                <button class="set-chip" data-group="font">Charter</button>
+                                <button class="set-chip" data-group="font">Songti</button>
+                                <button class="set-chip" data-group="font">Mono</button>
                             </div>
                         </div>
                         <div class="set-row">
@@ -660,23 +839,48 @@ export class PreviewPanel {
                                 <button class="set-chip" data-group="page-width" data-value="standard">Standard</button>
                                 <button class="set-chip" data-group="page-width" data-value="wide">Wide</button>
                                 <button class="set-chip" data-group="page-width" data-value="fluid">Fluid</button>
+                                <button class="set-chip" data-group="page-width" data-value="full">Full</button>
+                            </div>
+                        </div>
+                        <div class="set-row">
+                            <span class="set-row-label">Table wrap</span>
+                            <div class="set-chips">
+                                <button class="set-chip" data-group="table-wrap" data-value="0" title="Always wrap inside paper width">Auto</button>
+                                <button class="set-chip" data-group="table-wrap" data-value="240" title="Wrap columns wider than 240px">240</button>
+                                <button class="set-chip active" data-group="table-wrap" data-value="320" title="Wrap columns wider than 320px (default)">320</button>
+                                <button class="set-chip" data-group="table-wrap" data-value="420" title="Wrap columns wider than 420px">420</button>
                             </div>
                         </div>
                         <div class="set-row">
                             <span class="set-row-label">TOC Sidebar</span>
                             <span class="set-toggle on" data-action="toc-sidebar"></span>
                         </div>
+                        <div class="set-row">
+                            <span class="set-row-label">Click code copy</span>
+                            <span class="set-toggle on" data-action="click-inline-code-copy"></span>
+                        </div>
                     </div>
                 </div>
 
+                <div id="folio-find-bar" aria-label="Find in preview">
+                    <input id="folio-find-input" type="text" placeholder="搜索文档内容…" autocomplete="off" />
+                    <span id="folio-find-count"></span>
+                    <button id="folio-find-prev" type="button" class="folio-find-btn" title="上一处 (Shift+Enter)">↑</button>
+                    <button id="folio-find-next" type="button" class="folio-find-btn" title="下一处 (Enter)">↓</button>
+                    <button id="folio-find-close" type="button" class="folio-find-btn" title="关闭 (Esc)">✕</button>
+                </div>
+
                 <div class="workspace-shell">
+                    <div id="toc-backdrop" class="toc-backdrop"></div>
                     <aside id="sidebar-toc"></aside>
-                    <main id="document-container">
+                    <main id="document-container" class="toolbar-collapsed">
                         <div id="document-paper" class="width-standard">
                             <div id="document-content">Loading...</div>
                         </div>
                     </main>
                 </div>
+
+                <div id="folio-toast" role="status" aria-live="polite"></div>
 
                 <script nonce="${nonce}" src="${scriptUri}"></script>
             </body>

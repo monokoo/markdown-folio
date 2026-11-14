@@ -34,9 +34,9 @@
     "theme": "dark"
   },
   "activationEvents": [
-    "*",
+    "onLanguage:markdown",
     "onCommand:markdownFolio.openPreview",
-    "onStartupFinished"
+    "onCustomEditor:markdownFolio.customEditor"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -156,9 +156,10 @@
             "narrow",
             "standard",
             "wide",
-            "fluid"
+            "fluid",
+            "full"
           ],
-          "description": "Width of the virtual A4 page. 'fluid' adapts to the preview panel width."
+          "description": "Width of the virtual A4 page. 'fluid' adapts up to 1200px; 'full' fills the entire preview viewport edge-to-edge."
         },
         "markdownFolio.showToolbar": {
           "type": "boolean",
@@ -222,6 +223,18 @@
           "type": "boolean",
           "default": true,
           "description": "Synchronize preview scroll position with the editor cursor position."
+        },
+        "markdownFolio.tableWrapThreshold": {
+          "type": "integer",
+          "default": 320,
+          "minimum": 0,
+          "maximum": 800,
+          "description": "Max column width (in px) before table cells wrap automatically. Columns narrower than this threshold stay single-line and trigger horizontal scrolling when needed. Set to 0 to always wrap within container width."
+        },
+        "markdownFolio.clickInlineCodeCopy": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable left-click copying on smart inline code tokens (IDs, file paths, commands, hashes) when no text is dragged/selected."
         }
       }
     },
