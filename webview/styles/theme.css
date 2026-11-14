@@ -2,8 +2,11 @@
     --font-main: 'Inter', 'Segoe UI', sans-serif;
     --font-heading: 'Merriweather', Georgia, serif;
     --font-body: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
+    --font-mono: 'JetBrainsMono NFM', 'JetBrainsMono Nerd Font Mono', 'JetBrains Mono', 'SFMono-Regular', Menlo, Monaco, Consolas, 'Courier New', monospace;
     --font-size-body: 16px;
     --line-height-body: 1.72;
+    --paragraph-spacing: 1.05em;
+    --list-item-spacing: 0.28em;
     --zoom-scale: 1;
     --heading-scale: 1;
 }
@@ -337,9 +340,9 @@ body.github-mode {
 
 body.zen-mode {
     --font-main: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-    --font-heading: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-    --font-mono: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Courier New', monospace;
+    --font-heading: var(--custom-font-heading, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif);
+    --font-body: var(--custom-font-body, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif);
+    --font-mono: 'JetBrainsMono NFM', 'JetBrainsMono Nerd Font Mono', 'JetBrains Mono', 'SFMono-Regular', Menlo, Monaco, Consolas, 'Courier New', monospace;
     --bg-primary: #f6f8fa;
     --bg-secondary: #ffffff;
     --bg-surface: #ffffff;
@@ -372,7 +375,7 @@ body.zen-mode {
 body.zen-mode #document-content {
     color: #34495e !important;
     font-family: var(--font-body) !important;
-    line-height: 1.6 !important;
+    line-height: var(--line-height-body, 1.6) !important;
     -webkit-font-smoothing: antialiased;
 }
 
@@ -456,12 +459,23 @@ body.zen-mode #document-content hr {
 body.zen-mode #document-content pre,
 body.zen-mode #document-content .highlight,
 body.zen-mode #document-content .highlight pre {
-    border: none !important;
-    border-radius: 4px !important;
-    padding: 10px 48px 10px 16px !important;
+    border: 1px solid #eaecef !important;
+    border-radius: 6px !important;
+    padding: 10px 16px !important;
     background-color: var(--code-bg) !important;
     margin: 0.75em 0 !important;
     font-family: var(--font-mono) !important;
+}
+
+body.zen-mode #document-content pre.has-code-header {
+    padding: 0 !important;
+    overflow: hidden !important;
+}
+
+body.zen-mode #document-content pre .code-block-header {
+    background: #f1f3f5 !important;
+    border-bottom: 1px solid #e5e7eb !important;
+    padding: 4px 10px 4px 14px !important;
 }
 
 body.zen-mode #document-content pre code.hljs {
@@ -473,18 +487,32 @@ body.zen-mode #document-content pre code.hljs {
     line-height: 1.55 !important;
 }
 
+body.zen-mode #document-content pre.has-code-header code.hljs {
+    padding: 10px 16px !important;
+}
+
 body.zen-mode #document-content code:not(pre code) {
-    background-color: #f8f8f8 !important;
-    padding: 3px 5px !important;
+    background-color: #f3f4f6 !important;
+    border: 1px solid rgba(27, 31, 36, 0.06) !important;
+    padding: 2px 5px !important;
     margin: 0 2px !important;
-    border-radius: 2px !important;
-    color: #e96900 !important;
+    border-radius: 4px !important;
+    color: #24292f !important;
     font-family: var(--font-mono) !important;
     font-size: 0.8rem !important;
-    font-weight: 400 !important;
+    font-weight: 450 !important;
     font-synthesis: none !important;
     line-height: 1.5 !important;
     white-space: pre-wrap !important;
+}
+
+body.zen-mode #document-content code:not(pre code).folio-path-code {
+    color: #1a7f37 !important;
+}
+
+body.zen-mode #document-content code:not(pre code).folio-accent-code {
+    color: #b45309 !important;
+    background-color: #fdf6ec !important;
 }
 
 body.zen-mode #document-content table th,
@@ -493,22 +521,26 @@ body.zen-mode #document-content table td {
     padding: 6px 13px !important;
 }
 
-body.zen-mode #document-content tr:nth-child(2n) {
+body.zen-mode #document-content tbody tr:nth-child(2n) {
     background-color: #f8f8f8 !important;
 }
 
+body.zen-mode #document-content tbody tr:hover {
+    background-color: var(--table-tr-hover-bg, color-mix(in oklab, var(--text-primary) 7%, transparent)) !important;
+}
+
 body.zen-mode #document-content p {
-    margin: 1.2em 0 !important;
+    margin: var(--paragraph-spacing, 1.05em) 0 !important;
 }
 
 body.zen-mode #document-content ul,
 body.zen-mode #document-content ol {
-    line-height: 1.6rem !important;
+    line-height: var(--line-height-body, 1.6) !important;
     padding-left: 1.5rem !important;
 }
 
 body.zen-mode #document-content li {
-    margin-bottom: 0.25em !important;
+    margin-bottom: var(--list-item-spacing, 0.28em) !important;
 }
 
 body.zen-mode #document-content h4 {
@@ -668,7 +700,7 @@ pre code.hljs {
     padding: 0.6em 0.8em;
     background: var(--code-bg);
     border-radius: 8px;
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-family: var(--font-mono);
     font-size: 0.9em;
     line-height: 1.5;
 }
