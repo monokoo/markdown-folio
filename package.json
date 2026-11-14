@@ -36,6 +36,7 @@
   "activationEvents": [
     "onLanguage:markdown",
     "onCommand:markdownFolio.openPreview",
+    "onCommand:markdownFolio.togglePreview",
     "onCustomEditor:markdownFolio.customEditor"
   ],
   "main": "./dist/extension.js",
@@ -58,6 +59,12 @@
         "title": "Markdown Folio: Open Preview",
         "category": "Markdown Folio",
         "icon": "$(layout-panel-off)"
+      },
+      {
+        "command": "markdownFolio.togglePreview",
+        "title": "Markdown Folio: Toggle Preview",
+        "category": "Markdown Folio",
+        "icon": "$(code)"
       },
       {
         "command": "markdownFolio.exportPdf",
@@ -96,12 +103,21 @@
           "command": "markdownFolio.openPreview",
           "group": "navigation",
           "when": "resourceLangId == markdown"
+        },
+        {
+          "command": "markdownFolio.togglePreview",
+          "group": "navigation",
+          "when": "markdownFolio.previewActive"
         }
       ],
       "commandPalette": [
         {
           "command": "markdownFolio.openPreview",
           "when": "resourceLangId == markdown"
+        },
+        {
+          "command": "markdownFolio.togglePreview",
+          "when": "resourceLangId == markdown || markdownFolio.previewActive"
         }
       ]
     },
@@ -244,6 +260,12 @@
         "key": "ctrl+alt+v",
         "mac": "cmd+alt+v",
         "when": "editorTextFocus && editorLangId == markdown"
+      },
+      {
+        "command": "markdownFolio.togglePreview",
+        "key": "ctrl+alt+p",
+        "mac": "cmd+alt+p",
+        "when": "(editorTextFocus && editorLangId == markdown) || (markdownFolio.previewActive && !editorTextFocus && !terminalFocus)"
       }
     ]
   },

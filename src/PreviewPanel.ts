@@ -18,6 +18,14 @@ export class PreviewPanel {
         return PreviewPanel._markdownEngineInstance;
     }
     public static currentPanel: PreviewPanel | undefined;
+    public static activePanel: PreviewPanel | undefined;
+    private static readonly _panels = new Set<PreviewPanel>();
+
+    private static _syncActiveContext(): void {
+        const active = Array.from(PreviewPanel._panels).find(panel => panel._panel.active);
+        PreviewPanel.activePanel = active;
+        void vscode.commands.executeCommand('setContext', 'markdownFolio.previewActive', Boolean(active));
+    }
     private readonly _panel: vscode.WebviewPanel;
     private readonly _extensionUri: vscode.Uri;
     private _document: vscode.TextDocument;
@@ -44,6 +52,7 @@ export class PreviewPanel {
     private _pendingScrollLine = 0;
     private _mode: 'side' | 'customEditor' = 'side';
     private _suppressForwardScrollUntil = 0;
+    private _disposed = false;
 
     /**
      * Used by MarkdownFolioEditorProvider: VS Code supplies the panel, we just initialise it.
@@ -88,7 +97,7 @@ export class PreviewPanel {
                 current._hasPendingRender = true;
                 current._panel.title = `Preview: ${path.basename(document.fileName)}`;
             }
-            current._panel.reveal(column);
+            current._panel.reveal(current._panel.viewColumn ?? column);
             if (current._hasPendingRender || current._hasPendingSettings) {
                 current._update();
             }
@@ -114,6 +123,9 @@ export class PreviewPanel {
         this._extensionUri = extensionUri;
         this._document = document;
 
+        PreviewPanel._panels.add(this);
+        PreviewPanel._syncActiveContext();
+
         // Set the webview shell first; render content after the webview signals ready.
         this._initializeWebview();
 
@@ -131,6 +143,7 @@ export class PreviewPanel {
 
         // Listen for view state changes
         this._panel.onDidChangeViewState(() => {
+            PreviewPanel._syncActiveContext();
             if (!this._panel.visible) { return; }
             if (this._hasPendingRender) {
                 this._update();
@@ -235,8 +248,53 @@ export class PreviewPanel {
         );
     }
 
+    public get isActive(): boolean {
+        return this._panel.active;
+    }
+
+    /**
+     * Switch from the active preview back to its source Markdown text editor.
+     */
+    public async showSource(): Promise<void> {
+        const uri = this._document.uri;
+        if (this._mode === 'customEditor') {
+            await vscode.commands.executeCommand(
+                'vscode.openWith',
+                uri,
+                'default',
+                this._panel.viewColumn
+            );
+            return;
+        }
+
+        const existingEditor = vscode.window.visibleTextEditors.find(
+            editor => editor.document.uri.toString() === uri.toString()
+        );
+        if (existingEditor) {
+            await vscode.window.showTextDocument(existingEditor.document, {
+                viewColumn: existingEditor.viewColumn,
+                preserveFocus: false
+            });
+            return;
+        }
+
+        const doc = this._document.isClosed
+            ? await vscode.workspace.openTextDocument(uri)
+            : this._document;
+        await vscode.window.showTextDocument(doc, {
+            viewColumn: this._panel.viewColumn,
+            preserveFocus: false
+        });
+    }
+
     public dispose() {
-        PreviewPanel.currentPanel = undefined;
+        if (this._disposed) { return; }
+        this._disposed = true;
+        PreviewPanel._panels.delete(this);
+        if (PreviewPanel.currentPanel === this) {
+            PreviewPanel.currentPanel = undefined;
+        }
+        PreviewPanel._syncActiveContext();
 
         // Clean up our resources
         if (this._scrollThrottleTimer) {

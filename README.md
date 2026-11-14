@@ -78,7 +78,8 @@ English | [Tiếng Việt](https://github.com/BiViPi/markdown-folio/blob/main/RE
 
 | Shortcut | Action |
 |---|---|
-| `Ctrl+Alt+V` | Paste image from clipboard into markdown |
+| `Ctrl+Alt+P` / `Cmd+Alt+P` | Toggle between Markdown source and Folio preview |
+| `Ctrl+Alt+V` / `Cmd+Alt+V` | Paste image from clipboard into markdown |
 
 ---
 
