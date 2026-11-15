@@ -263,8 +263,8 @@
       },
       {
         "command": "markdownFolio.togglePreview",
-        "key": "ctrl+alt+p",
-        "mac": "cmd+alt+p",
+        "key": "shift+ctrl+v",
+        "mac": "shift+cmd+v",
         "when": "(editorTextFocus && editorLangId == markdown) || (markdownFolio.previewActive && !editorTextFocus && !terminalFocus)"
       }
     ]
