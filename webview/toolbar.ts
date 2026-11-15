@@ -79,7 +79,7 @@ export class Toolbar {
             const el = document.getElementById('document-content');
             if (!el) return null;
             const clone = el.cloneNode(true) as HTMLElement;
-            clone.querySelectorAll('.folio-heading-tools, .folio-table-tools').forEach(node => node.remove());
+            clone.querySelectorAll('.folio-heading-tools, .folio-table-tools, .folio-image-expand-btn, .folio-link-gallery').forEach(node => node.remove());
             clone.querySelectorAll('mark.folio-find-mark').forEach(mark => {
                 mark.replaceWith(document.createTextNode(mark.textContent ?? ''));
             });
@@ -363,6 +363,15 @@ export class Toolbar {
                         payload: { clickInlineCodeCopy: isEnabled }
                     });
                 }
+
+                if (toggle.dataset.action === 'expand-image-links') {
+                    const isEnabled = toggle.classList.contains('on');
+                    document.dispatchEvent(new CustomEvent('markdown-folio:expand-image-links-changed', { detail: { enabled: isEnabled } }));
+                    this.vscode.postMessage({
+                        type: 'update-settings',
+                        payload: { expandImageLinks: isEnabled }
+                    });
+                }
             });
         });
     }
@@ -421,6 +430,7 @@ export class Toolbar {
         lineSpacing?: 'compact' | 'normal' | 'relaxed';
         pageWidth?: 'narrow' | 'standard' | 'wide' | 'fluid' | 'full';
         tableWrapThreshold?: number;
+        expandImageLinks?: boolean;
     }) {
         // Sync font chips
         if (settings.bodyFont !== undefined) {
@@ -489,6 +499,14 @@ export class Toolbar {
             const toggle = document.querySelector<HTMLElement>('.set-toggle[data-action="click-inline-code-copy"]');
             if (toggle) {
                 toggle.classList.toggle('on', settings.clickInlineCodeCopy);
+            }
+        }
+
+        // Sync Expand image links toggle
+        if (settings.expandImageLinks !== undefined) {
+            const toggle = document.querySelector<HTMLElement>('.set-toggle[data-action="expand-image-links"]');
+            if (toggle) {
+                toggle.classList.toggle('on', settings.expandImageLinks);
             }
         }
 

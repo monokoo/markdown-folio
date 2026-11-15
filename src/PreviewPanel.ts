@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 import { MarkdownEngine } from './engine/MarkdownEngine';
 import { PathResolver } from './utils/pathResolver';
 import { FrontmatterParser } from './engine/FrontmatterParser';
@@ -226,6 +225,10 @@ export class PreviewPanel {
                         this._handleOpenWorkspaceFile(message.payload);
                         return;
                     }
+                    case 'resolve-image-data-uri': {
+                        this._handleResolveImageDataUri(message.payload);
+                        return;
+                    }
                 }
             },
             null,
@@ -339,51 +342,34 @@ export class PreviewPanel {
         );
     }
 
+    private _handleResolveImageDataUri(payload: { requestId?: string; path?: string }): void {
+        const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
+        const rawPath = typeof payload?.path === 'string' ? payload.path.trim() : '';
+        if (!requestId || !rawPath) { return; }
+
+        const documentDir = path.dirname(this._document.fileName);
+        const dataUri = PathResolver.readImageDataUriForLink(rawPath, documentDir, this._document.uri);
+        void this._panel.webview.postMessage({
+            type: 'image-data-uri-resolved',
+            payload: { requestId, dataUri }
+        });
+    }
+
     private async _handleOpenWorkspaceFile(payload: { path?: string }): Promise<void> {
         const rawPath = typeof payload?.path === 'string' ? payload.path.trim() : '';
         if (!rawPath) { return; }
 
-        const match = rawPath.match(/^(.+?)(?::(\d+)(?::(\d+))?)?$/);
-        const filePart = match?.[1] ?? rawPath;
-        const lineNum = match?.[2] ? Math.max(0, parseInt(match[2], 10) - 1) : undefined;
-        const colNum = match?.[3] ? Math.max(0, parseInt(match[3], 10) - 1) : 0;
+        const hashMatch = rawPath.match(/^([^#]+)#L(\d+)(?:-L?\d+)?$/i);
+        const withoutQuery = PathResolver.stripQueryAndHash(hashMatch ? hashMatch[1] : rawPath);
+        const lineMatch = withoutQuery.match(/^(.+?):(\d+)(?::(\d+))?$/);
+        const filePart = lineMatch?.[1] ?? withoutQuery;
+        const lineNum = hashMatch?.[2]
+            ? Math.max(0, parseInt(hashMatch[2], 10) - 1)
+            : (lineMatch?.[2] ? Math.max(0, parseInt(lineMatch[2], 10) - 1) : undefined);
+        const colNum = lineMatch?.[3] ? Math.max(0, parseInt(lineMatch[3], 10) - 1) : 0;
 
         const docDir = path.dirname(this._document.fileName);
-        const candidates: string[] = [];
-        if (path.isAbsolute(filePart)) {
-            candidates.push(filePart);
-        } else {
-            candidates.push(path.resolve(docDir, filePart));
-            const wsFolder = vscode.workspace.getWorkspaceFolder(this._document.uri)?.uri.fsPath;
-            if (wsFolder) {
-                candidates.push(path.resolve(wsFolder, filePart));
-            }
-            for (const folder of vscode.workspace.workspaceFolders ?? []) {
-                candidates.push(path.resolve(folder.uri.fsPath, filePart));
-            }
-            let cur = docDir;
-            for (let i = 0; i < 4; i++) {
-                const parent = path.dirname(cur);
-                if (!parent || parent === cur) { break; }
-                candidates.push(path.resolve(parent, filePart));
-                cur = parent;
-            }
-        }
-
-        const seen = new Set<string>();
-        let targetPath: string | null = null;
-        for (const candidate of candidates) {
-            if (seen.has(candidate)) { continue; }
-            seen.add(candidate);
-            try {
-                if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
-                    targetPath = candidate;
-                    break;
-                }
-            } catch {
-                // ignore unreadable candidate path
-            }
-        }
+        const targetPath = PathResolver.resolveCandidateFile(filePart, docDir, this._document.uri);
 
         if (!targetPath) {
             this._panel.webview.postMessage({
@@ -661,9 +647,10 @@ export class PreviewPanel {
             const { title, author, date, content, lineOffset } = FrontmatterParser.extract(documentContent);
             const previewContent = PathResolver.resolveImagesForWebview(content, documentDir, webview);
             const { html, toc } = PreviewPanel._markdownEngine.renderWithToc(previewContent, lineOffset);
+            const annotatedHtml = PathResolver.annotateImageLinksForWebview(html, documentDir, webview);
 
             rendered = {
-                html,
+                html: annotatedHtml,
                 toc,
                 metadata: { title, author, date },
                 title: title || path.basename(this._document.fileName, '.md'),
@@ -917,6 +904,10 @@ export class PreviewPanel {
                             <span class="set-row-label">Click code copy</span>
                             <span class="set-toggle on" data-action="click-inline-code-copy"></span>
                         </div>
+                        <div class="set-row">
+                            <span class="set-row-label">Expand image links</span>
+                            <span class="set-toggle" data-action="expand-image-links"></span>
+                        </div>
                     </div>
                 </div>
 
@@ -939,6 +930,26 @@ export class PreviewPanel {
                 </div>
 
                 <div id="folio-toast" role="status" aria-live="polite"></div>
+
+                <div id="folio-lightbox" class="folio-lightbox" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Image preview">
+                    <div class="folio-lightbox-bar">
+                        <div class="folio-lightbox-meta">
+                            <span id="folio-lightbox-counter" class="folio-lightbox-counter"></span>
+                            <span id="folio-lightbox-title" class="folio-lightbox-title"></span>
+                        </div>
+                        <div class="folio-lightbox-actions">
+                            <button id="folio-lightbox-zoom-toggle" type="button" class="folio-lb-btn" title="切换适应屏幕 / 1:1 原寸 (Space / 0)">1:1</button>
+                            <button id="folio-lightbox-open-file" type="button" class="folio-lb-btn" title="在编辑器中打开原图">打开文件</button>
+                            <button id="folio-lightbox-close" type="button" class="folio-lb-btn folio-lb-close" title="关闭 (Esc)">✕</button>
+                        </div>
+                    </div>
+                    <button id="folio-lightbox-prev" type="button" class="folio-lb-nav folio-lb-prev" title="上一张 (←)" aria-label="Previous image">‹</button>
+                    <div id="folio-lightbox-stage" class="folio-lightbox-stage">
+                        <img id="folio-lightbox-img" class="folio-lightbox-img" alt="" />
+                        <div id="folio-lightbox-error" class="folio-lightbox-error"></div>
+                    </div>
+                    <button id="folio-lightbox-next" type="button" class="folio-lb-nav folio-lb-next" title="下一张 (→)" aria-label="Next image">›</button>
+                </div>
 
                 <script nonce="${nonce}" src="${scriptUri}"></script>
             </body>

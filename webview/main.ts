@@ -2,7 +2,16 @@ import { Renderer } from './renderer';
 import { Toolbar, applyLineSpacingVars } from './toolbar';
 import { Toc } from './toc';
 import { ScrollSync } from './scrollSync';
-import { enhanceInlineCodes, enhanceSectionsAndTables, FindInPage, setInlineCodeCopyEnabled, showPreviewToast } from './interactions';
+import {
+    enhanceInlineCodes,
+    enhanceLinksAndImages,
+    enhanceSectionsAndTables,
+    FindInPage,
+    handleResolvedImageDataUri,
+    setExpandImageLinksEnabled,
+    setInlineCodeCopyEnabled,
+    showPreviewToast
+} from './interactions';
 import './styles/theme.css';
 import './styles/document.css';
 import './styles/toolbar.css';
@@ -26,6 +35,7 @@ type MermaidApi = {
 
 let mermaidLoadPromise: Promise<MermaidApi> | null = null;
 let currentTableWrapThreshold = 320;
+let currentExpandImageLinks = false;
 
 function updateTableOverflowHint(wrapper: HTMLElement) {
     const hasScroll = wrapper.scrollWidth > wrapper.clientWidth + 2;
@@ -296,6 +306,13 @@ document.addEventListener('markdown-folio:table-threshold-changed', (event: Even
         scrollSync.rebuildIndex();
     }
 });
+document.addEventListener('markdown-folio:expand-image-links-changed', (event: Event) => {
+    const customEvent = event as CustomEvent<{ enabled: boolean }>;
+    if (typeof customEvent.detail?.enabled === 'boolean') {
+        currentExpandImageLinks = customEvent.detail.enabled;
+        setExpandImageLinksEnabled(currentExpandImageLinks, true);
+    }
+});
 window.addEventListener('resize', scheduleViewportLayoutSync);
 syncToolbarPosition();
 
@@ -440,6 +457,10 @@ window.addEventListener('message', event => {
             enhanceTables(currentTableWrapThreshold);
             enhanceInlineCodes(vscode);
             enhanceSectionsAndTables(vscode);
+            enhanceLinksAndImages(vscode, () => {
+                syncPaperScaleHeight();
+                scrollSync.rebuildIndex();
+            });
             toc.render(message.payload.toc);
             findInPage.refresh();
 
@@ -514,6 +535,10 @@ window.addEventListener('message', event => {
             showPreviewToast(message.payload?.message ?? '', message.payload?.tone);
             break;
         }
+        case 'image-data-uri-resolved': {
+            handleResolvedImageDataUri(message.payload ?? {});
+            break;
+        }
     }
 });
 
@@ -530,6 +555,7 @@ function applySettings(settings: {
     scrollSync?: boolean;
     tableWrapThreshold?: number;
     clickInlineCodeCopy?: boolean;
+    expandImageLinks?: boolean;
 }) {
     const root = document.documentElement;
     const defaultHeadingFont = "'Merriweather', Georgia, serif";
@@ -539,6 +565,11 @@ function applySettings(settings: {
     }
     if (settings.clickInlineCodeCopy !== undefined) {
         setInlineCodeCopyEnabled(settings.clickInlineCodeCopy);
+    }
+    if (settings.expandImageLinks !== undefined) {
+        const changed = currentExpandImageLinks !== settings.expandImageLinks;
+        currentExpandImageLinks = settings.expandImageLinks;
+        setExpandImageLinksEnabled(currentExpandImageLinks, changed);
     }
     if (settings.headingFont) {
         root.style.setProperty('--font-heading', settings.headingFont);

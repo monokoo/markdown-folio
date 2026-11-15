@@ -13,6 +13,7 @@ export interface PreviewSettings {
     scrollSync: boolean;
     tableWrapThreshold: number;
     clickInlineCodeCopy: boolean;
+    expandImageLinks: boolean;
 }
 
 const DEFAULTS: PreviewSettings = {
@@ -28,6 +29,7 @@ const DEFAULTS: PreviewSettings = {
     scrollSync: true,
     tableWrapThreshold: 320,
     clickInlineCodeCopy: true,
+    expandImageLinks: false,
 };
 
 export class SettingsManager {
@@ -48,6 +50,7 @@ export class SettingsManager {
             scrollSync: cfg.get<boolean>('scrollSync', DEFAULTS.scrollSync),
             tableWrapThreshold: SettingsManager._clampThreshold(cfg.get<number>('tableWrapThreshold', DEFAULTS.tableWrapThreshold)),
             clickInlineCodeCopy: cfg.get<boolean>('clickInlineCodeCopy', DEFAULTS.clickInlineCodeCopy),
+            expandImageLinks: cfg.get<boolean>('expandImageLinks', DEFAULTS.expandImageLinks),
         };
     }
 

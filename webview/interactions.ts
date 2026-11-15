@@ -514,7 +514,7 @@ export class FindInPage {
             acceptNode(node) {
                 const parent = node.parentElement;
                 if (!parent) { return NodeFilter.FILTER_REJECT; }
-                if (parent.closest('.folio-heading-tools, .folio-table-tools, .code-block-header, .katex-mathml, script, style')) {
+                if (parent.closest('.folio-heading-tools, .folio-table-tools, .folio-image-expand-btn, .folio-link-gallery, .code-block-header, .katex-mathml, script, style')) {
                     return NodeFilter.FILTER_REJECT;
                 }
                 return (node.nodeValue ?? '').toLowerCase().includes(lowerQuery)
@@ -593,4 +593,751 @@ export class FindInPage {
             this._countEl.textContent = `${index + 1} / ${this._matches.length}${extra}`;
         }
     }
+}
+
+// ─── Image Link Preview, Inline Thumbnail Expansion & Lightbox ────────────────
+
+const IMAGE_LINK_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
+const EXPAND_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 16-5-5-4 4-2-2-7 7"/></svg>';
+
+interface LightboxItem {
+    key: string;
+    src: string;
+    rawHref?: string;
+    title: string;
+}
+
+let latestLinkVscode: any = null;
+let linkDelegationBound = false;
+let linkDownX = 0;
+let linkDownY = 0;
+let globalExpandImageLinks = false;
+let onLinkLayoutChanged: (() => void) | undefined;
+const perLinkExpandOverrides = new Map<string, boolean>();
+const resolvedDataUriCache = new Map<string, string | null>();
+const pendingDataUriRequests = new Map<string, (dataUri: string | null) => void>();
+let imageResolveSeq = 0;
+
+function stripQueryAndHash(raw: string): string {
+    return raw.split('#')[0].split('?')[0];
+}
+
+function safeDecodeHref(raw: string): string {
+    try {
+        return decodeURIComponent(raw);
+    } catch {
+        return raw;
+    }
+}
+
+function isExternalHref(rawHref: string): boolean {
+    const lower = rawHref.trim().toLowerCase();
+    return lower.startsWith('http://')
+        || lower.startsWith('https://')
+        || lower.startsWith('mailto:')
+        || lower.startsWith('vscode:');
+}
+
+function isImageHref(rawHref: string): boolean {
+    const trimmed = rawHref.trim();
+    if (!trimmed || trimmed.startsWith('#') || isExternalHref(trimmed) || trimmed.toLowerCase().startsWith('data:')) {
+        return false;
+    }
+    return IMAGE_LINK_EXT_RE.test(stripQueryAndHash(trimmed));
+}
+
+function getLinkBasename(rawHref: string): string {
+    const clean = safeDecodeHref(stripQueryAndHash(rawHref));
+    const idx = Math.max(clean.lastIndexOf('/'), clean.lastIndexOf('\\'));
+    return idx >= 0 ? clean.slice(idx + 1) : clean;
+}
+
+function isLinkExpanded(key: string): boolean {
+    const override = perLinkExpandOverrides.get(key);
+    return override !== undefined ? override : globalExpandImageLinks;
+}
+
+function requestImageSrc(rawHref: string, preloadedSrc?: string): Promise<string | null> {
+    if (preloadedSrc) {
+        return Promise.resolve(preloadedSrc);
+    }
+    if (resolvedDataUriCache.has(rawHref)) {
+        return Promise.resolve(resolvedDataUriCache.get(rawHref) ?? null);
+    }
+    if (!latestLinkVscode) {
+        return Promise.resolve(null);
+    }
+
+    const requestId = `img-${++imageResolveSeq}`;
+    return new Promise(resolve => {
+        const timer = window.setTimeout(() => {
+            if (pendingDataUriRequests.has(requestId)) {
+                pendingDataUriRequests.delete(requestId);
+                resolve(null);
+            }
+        }, 8000);
+        pendingDataUriRequests.set(requestId, (dataUri: string | null) => {
+            window.clearTimeout(timer);
+            resolvedDataUriCache.set(rawHref, dataUri);
+            resolve(dataUri);
+        });
+        latestLinkVscode.postMessage({
+            type: 'resolve-image-data-uri',
+            payload: { requestId, path: rawHref }
+        });
+    });
+}
+
+export function handleResolvedImageDataUri(payload: { requestId?: string; dataUri?: string | null }): void {
+    const requestId = payload?.requestId;
+    if (!requestId) { return; }
+    const callback = pendingDataUriRequests.get(requestId);
+    if (!callback) { return; }
+    pendingDataUriRequests.delete(requestId);
+    callback(payload.dataUri ?? null);
+}
+
+export function setExpandImageLinksEnabled(enabled: boolean, clearOverrides = true): void {
+    globalExpandImageLinks = enabled;
+    if (clearOverrides) {
+        perLinkExpandOverrides.clear();
+    }
+    const anchors = document.querySelectorAll<HTMLAnchorElement>('#document-content a.folio-image-link');
+    anchors.forEach(anchor => syncSingleImageLinkExpansion(anchor));
+    onLinkLayoutChanged?.();
+}
+
+function findBlockForImageLink(anchor: HTMLAnchorElement): HTMLElement | null {
+    return anchor.closest<HTMLElement>('li, p, td, th, blockquote') ?? anchor.parentElement;
+}
+
+function ensureGalleryContainer(block: HTMLElement): HTMLElement {
+    const children = Array.from(block.children);
+    const existing = children.find(el => el.classList.contains('folio-link-gallery')) as HTMLElement | undefined;
+    if (existing) { return existing; }
+    const gallery = document.createElement('span');
+    gallery.className = 'folio-link-gallery';
+    block.appendChild(gallery);
+    return gallery;
+}
+
+function removeCardAndPruneGallery(block: HTMLElement, cardKey: string): void {
+    const gallery = Array.from(block.children).find(el => el.classList.contains('folio-link-gallery')) as HTMLElement | undefined;
+    if (!gallery) { return; }
+    Array.from(gallery.children).forEach(child => {
+        if ((child as HTMLElement).dataset.folioCardKey === cardKey) {
+            child.remove();
+        }
+    });
+    if (gallery.children.length === 0) {
+        gallery.remove();
+    }
+}
+
+function syncSingleImageLinkExpansion(anchor: HTMLAnchorElement): void {
+    const key = anchor.dataset.folioLinkKey ?? '';
+    const rawHref = anchor.dataset.folioRawHref ?? '';
+    if (!key || !rawHref) { return; }
+
+    const expanded = isLinkExpanded(key);
+    anchor.classList.toggle('is-expanded', expanded);
+
+    const next = anchor.nextElementSibling;
+    if (next?.classList.contains('folio-image-expand-btn')) {
+        next.classList.toggle('is-expanded', expanded);
+        next.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        next.setAttribute('title', expanded ? '收起缩略图' : '原地展开缩略图');
+    }
+
+    const block = findBlockForImageLink(anchor);
+    if (!block) { return; }
+
+    if (!expanded) {
+        removeCardAndPruneGallery(block, key);
+        return;
+    }
+
+    const gallery = ensureGalleryContainer(block);
+    const existingCard = Array.from(gallery.children).find(
+        el => (el as HTMLElement).dataset.folioCardKey === key
+    ) as HTMLElement | undefined;
+    if (existingCard) { return; }
+
+    const basename = getLinkBasename(rawHref);
+    const labelText = (anchor.textContent ?? '').trim();
+    const displayTitle = labelText && labelText !== basename ? `${labelText} (${basename})` : basename;
+
+    const card = document.createElement('span');
+    card.className = 'folio-inline-image-card';
+    card.dataset.folioCardKey = key;
+    card.dataset.folioRawHref = rawHref;
+
+    const head = document.createElement('span');
+    head.className = 'folio-inline-card-head';
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'folio-inline-card-title';
+    titleSpan.textContent = displayTitle;
+    titleSpan.title = safeDecodeHref(rawHref);
+
+    const actions = document.createElement('span');
+    actions.className = 'folio-inline-card-actions';
+
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.className = 'folio-card-btn folio-card-open';
+    openBtn.textContent = '打开';
+    openBtn.title = '在编辑器中打开原图';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'folio-card-btn folio-card-close';
+    closeBtn.textContent = '✕';
+    closeBtn.title = '收起缩略图';
+
+    actions.append(openBtn, closeBtn);
+    head.append(titleSpan, actions);
+
+    const body = document.createElement('span');
+    body.className = 'folio-inline-card-body';
+
+    const img = document.createElement('img');
+    img.className = 'folio-inline-thumb';
+    img.loading = 'eager';
+    img.alt = displayTitle;
+    img.title = '点击放大查看 (Lightbox)';
+
+    const fallback = document.createElement('span');
+    fallback.className = 'folio-inline-card-fallback';
+    fallback.textContent = '正在加载图片…';
+
+    body.append(img, fallback);
+    card.append(head, body);
+    gallery.appendChild(card);
+
+    img.addEventListener('load', () => {
+        card.classList.remove('is-error', 'is-loading');
+        onLinkLayoutChanged?.();
+    });
+    img.addEventListener('error', () => {
+        card.classList.remove('is-loading');
+        card.classList.add('is-error');
+        fallback.textContent = `无法加载图片：${basename}`;
+        onLinkLayoutChanged?.();
+    });
+
+    card.classList.add('is-loading');
+    void requestImageSrc(rawHref, anchor.dataset.folioImgSrc).then(src => {
+        if (!card.isConnected) { return; }
+        if (!src) {
+            card.classList.remove('is-loading');
+            card.classList.add('is-error');
+            fallback.textContent = `未找到图片：${basename}`;
+            return;
+        }
+        img.src = src;
+    });
+}
+
+// ─── Lightbox Modal ───────────────────────────────────────────────────────────
+
+class ImageLightbox {
+    private _items: LightboxItem[] = [];
+    private _index = 0;
+    private _zoomed = false;
+    private _scale = 1;
+    private _bound = false;
+    private _dragging = false;
+    private _dragStartX = 0;
+    private _dragStartY = 0;
+    private _dragScrollLeft = 0;
+    private _dragScrollTop = 0;
+
+    private _root(): HTMLElement | null {
+        return document.getElementById('folio-lightbox');
+    }
+
+    public isOpen(): boolean {
+        return Boolean(this._root()?.classList.contains('show'));
+    }
+
+    private _ensureBound(): void {
+        if (this._bound) { return; }
+        const root = this._root();
+        if (!root) { return; }
+        this._bound = true;
+
+        const stage = document.getElementById('folio-lightbox-stage');
+        const img = document.getElementById('folio-lightbox-img') as HTMLImageElement | null;
+
+        document.getElementById('folio-lightbox-close')?.addEventListener('click', () => this.close());
+        document.getElementById('folio-lightbox-prev')?.addEventListener('click', () => this.step(-1));
+        document.getElementById('folio-lightbox-next')?.addEventListener('click', () => this.step(1));
+        document.getElementById('folio-lightbox-zoom-toggle')?.addEventListener('click', () => this.toggleZoom());
+        document.getElementById('folio-lightbox-open-file')?.addEventListener('click', () => {
+            const cur = this._items[this._index];
+            if (!cur?.rawHref) { return; }
+            latestLinkVscode?.postMessage({
+                type: 'open-workspace-file',
+                payload: { path: safeDecodeHref(cur.rawHref) }
+            });
+        });
+
+        stage?.addEventListener('click', (event: MouseEvent) => {
+            if (event.target === stage) {
+                this.close();
+            }
+        });
+
+        img?.addEventListener('click', (event: MouseEvent) => {
+            event.stopPropagation();
+            if (!this._dragging) {
+                this.toggleZoom();
+            }
+        });
+
+        img?.addEventListener('load', () => {
+            root.classList.remove('has-error');
+        });
+
+        img?.addEventListener('error', () => {
+            const cur = this._items[this._index];
+            const errEl = document.getElementById('folio-lightbox-error');
+            if (errEl) {
+                errEl.textContent = `无法加载图片：${cur?.rawHref ? getLinkBasename(cur.rawHref) : cur?.title ?? ''}`;
+            }
+            root.classList.add('has-error');
+        });
+
+        stage?.addEventListener('wheel', (event: WheelEvent) => {
+            if (!this.isOpen() || (!event.ctrlKey && !event.metaKey)) { return; }
+            event.preventDefault();
+            const delta = event.deltaY < 0 ? 0.18 : -0.18;
+            this._scale = Math.max(0.5, Math.min(4, Number((this._scale + delta).toFixed(2))));
+            this._zoomed = Math.abs(this._scale - 1) > 0.01;
+            this._applyZoom();
+        }, { passive: false });
+
+        stage?.addEventListener('mousedown', (event: MouseEvent) => {
+            if (!this._zoomed || event.button !== 0 || event.target === stage) { return; }
+            this._dragging = false;
+            this._dragStartX = event.clientX;
+            this._dragStartY = event.clientY;
+            this._dragScrollLeft = stage.scrollLeft;
+            this._dragScrollTop = stage.scrollTop;
+
+            const onMove = (moveEvent: MouseEvent) => {
+                const dx = moveEvent.clientX - this._dragStartX;
+                const dy = moveEvent.clientY - this._dragStartY;
+                if (Math.hypot(dx, dy) > 4) {
+                    this._dragging = true;
+                }
+                if (this._dragging) {
+                    stage.scrollLeft = this._dragScrollLeft - dx;
+                    stage.scrollTop = this._dragScrollTop - dy;
+                }
+            };
+            const onUp = () => {
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+                window.setTimeout(() => { this._dragging = false; }, 0);
+            };
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+        });
+
+        document.addEventListener('keydown', (event: KeyboardEvent) => {
+            if (!this.isOpen()) { return; }
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                this.close();
+            } else if (event.key === 'ArrowLeft') {
+                event.preventDefault();
+                this.step(-1);
+            } else if (event.key === 'ArrowRight') {
+                event.preventDefault();
+                this.step(1);
+            } else if (event.key === ' ' || event.key === '0') {
+                event.preventDefault();
+                this.toggleZoom();
+            } else if (event.key === '+' || event.key === '=') {
+                event.preventDefault();
+                this._zoomed = true;
+                this._scale = Math.min(4, Number((this._scale + 0.25).toFixed(2)));
+                this._applyZoom();
+            } else if (event.key === '-') {
+                event.preventDefault();
+                this._scale = Math.max(0.5, Number((this._scale - 0.25).toFixed(2)));
+                this._zoomed = Math.abs(this._scale - 1) > 0.01;
+                this._applyZoom();
+            }
+        }, true);
+    }
+
+    public open(items: LightboxItem[], startKey: string): void {
+        this._ensureBound();
+        const root = this._root();
+        if (!root || items.length === 0) { return; }
+
+        this._items = items;
+        const foundIndex = items.findIndex(item => item.key === startKey);
+        this._index = foundIndex >= 0 ? foundIndex : 0;
+        this._zoomed = false;
+        this._scale = 1;
+
+        root.classList.add('show');
+        root.setAttribute('aria-hidden', 'false');
+        this._renderCurrent();
+    }
+
+    public close(): void {
+        const root = this._root();
+        if (!root) { return; }
+        root.classList.remove('show', 'is-zoomed', 'has-error');
+        root.setAttribute('aria-hidden', 'true');
+        const img = document.getElementById('folio-lightbox-img') as HTMLImageElement | null;
+        if (img) {
+            img.removeAttribute('src');
+            img.style.transform = '';
+        }
+    }
+
+    public step(delta: number): void {
+        if (this._items.length <= 1) { return; }
+        this._index = (this._index + delta + this._items.length) % this._items.length;
+        this._zoomed = false;
+        this._scale = 1;
+        this._renderCurrent();
+    }
+
+    public toggleZoom(): void {
+        this._zoomed = !this._zoomed;
+        this._scale = 1;
+        this._applyZoom();
+    }
+
+    private _applyZoom(): void {
+        const root = this._root();
+        const img = document.getElementById('folio-lightbox-img') as HTMLImageElement | null;
+        const zoomBtn = document.getElementById('folio-lightbox-zoom-toggle');
+        if (!root || !img) { return; }
+
+        root.classList.toggle('is-zoomed', this._zoomed);
+        img.style.transform = this._scale !== 1 ? `scale(${this._scale})` : '';
+        img.style.transformOrigin = 'center center';
+        if (zoomBtn) {
+            zoomBtn.textContent = this._zoomed ? '适应' : '1:1';
+        }
+    }
+
+    private _renderCurrent(): void {
+        const root = this._root();
+        const item = this._items[this._index];
+        if (!root || !item) { return; }
+
+        root.classList.remove('has-error');
+        this._applyZoom();
+
+        const counter = document.getElementById('folio-lightbox-counter');
+        const titleEl = document.getElementById('folio-lightbox-title');
+        const openBtn = document.getElementById('folio-lightbox-open-file') as HTMLButtonElement | null;
+        const prevBtn = document.getElementById('folio-lightbox-prev') as HTMLButtonElement | null;
+        const nextBtn = document.getElementById('folio-lightbox-next') as HTMLButtonElement | null;
+        const img = document.getElementById('folio-lightbox-img') as HTMLImageElement | null;
+        const errEl = document.getElementById('folio-lightbox-error');
+
+        if (counter) {
+            counter.textContent = `${this._index + 1} / ${this._items.length}`;
+        }
+        if (titleEl) {
+            titleEl.textContent = item.title;
+            titleEl.title = item.rawHref ? safeDecodeHref(item.rawHref) : item.title;
+        }
+        if (openBtn) {
+            openBtn.style.display = item.rawHref ? '' : 'none';
+        }
+        const multi = this._items.length > 1;
+        if (prevBtn) { prevBtn.style.display = multi ? '' : 'none'; }
+        if (nextBtn) { nextBtn.style.display = multi ? '' : 'none'; }
+
+        if (!img) { return; }
+        const requestedIndex = this._index;
+        img.removeAttribute('src');
+        img.alt = item.title;
+
+        if (item.src) {
+            img.src = item.src;
+            return;
+        }
+
+        if (item.rawHref) {
+            void requestImageSrc(item.rawHref).then(src => {
+                if (!this.isOpen() || this._index !== requestedIndex) { return; }
+                if (!src) {
+                    if (errEl) {
+                        errEl.textContent = `未找到图片：${getLinkBasename(item.rawHref!)}`;
+                    }
+                    root.classList.add('has-error');
+                    return;
+                }
+                item.src = src;
+                img.src = src;
+            });
+        }
+    }
+}
+
+const imageLightbox = new ImageLightbox();
+
+function collectLightboxItems(): LightboxItem[] {
+    const root = document.getElementById('document-content');
+    if (!root) { return []; }
+
+    const items: LightboxItem[] = [];
+    const seenImg = new WeakSet<HTMLImageElement>();
+    const nodes = root.querySelectorAll<HTMLElement>('a.folio-image-link, img:not(.folio-inline-thumb)');
+
+    nodes.forEach((node, idx) => {
+        if (node.closest('.katex, .folio-heading-tools, .folio-table-tools, .folio-link-gallery')) {
+            return;
+        }
+        if (node instanceof HTMLAnchorElement) {
+            const innerImg = node.querySelector('img');
+            if (innerImg) {
+                seenImg.add(innerImg);
+            }
+            const rawHref = node.dataset.folioRawHref ?? node.getAttribute('href') ?? '';
+            const basename = getLinkBasename(rawHref);
+            const label = (node.textContent ?? '').trim();
+            const title = label && label !== basename ? `${label} · ${basename}` : basename;
+            items.push({
+                key: node.dataset.folioLinkKey || `link-${idx}`,
+                src: node.dataset.folioImgSrc || '',
+                rawHref,
+                title,
+            });
+            return;
+        }
+
+        if (node instanceof HTMLImageElement) {
+            if (seenImg.has(node)) { return; }
+            const parentAnchor = node.closest('a[href]') as HTMLAnchorElement | null;
+            if (parentAnchor && isExternalHref(parentAnchor.getAttribute('href') ?? '')) {
+                return;
+            }
+            const key = node.dataset.folioImgKey || `img-${idx}`;
+            node.dataset.folioImgKey = key;
+            items.push({
+                key,
+                src: node.currentSrc || node.src || '',
+                title: node.alt || getLinkBasename(node.src || 'Image'),
+            });
+        }
+    });
+
+    return items;
+}
+
+function ensureLinkDelegation(): void {
+    if (linkDelegationBound) { return; }
+    const contentEl = document.getElementById('document-content');
+    if (!contentEl) { return; }
+    linkDelegationBound = true;
+
+    contentEl.addEventListener('mousedown', (event: MouseEvent) => {
+        linkDownX = event.clientX;
+        linkDownY = event.clientY;
+    });
+
+    contentEl.addEventListener('click', (event: MouseEvent) => {
+        const target = event.target as HTMLElement | null;
+        if (!target) { return; }
+
+        const expandBtn = target.closest<HTMLElement>('.folio-image-expand-btn');
+        if (expandBtn) {
+            event.preventDefault();
+            event.stopPropagation();
+            const anchor = expandBtn.previousElementSibling as HTMLAnchorElement | null;
+            if (anchor?.classList.contains('folio-image-link')) {
+                const key = anchor.dataset.folioLinkKey ?? '';
+                if (key) {
+                    perLinkExpandOverrides.set(key, !isLinkExpanded(key));
+                    syncSingleImageLinkExpansion(anchor);
+                    onLinkLayoutChanged?.();
+                }
+            }
+            return;
+        }
+
+        const card = target.closest<HTMLElement>('.folio-inline-image-card');
+        if (card) {
+            const key = card.dataset.folioCardKey ?? '';
+            const rawHref = card.dataset.folioRawHref ?? '';
+            if (target.closest('.folio-card-close')) {
+                event.preventDefault();
+                event.stopPropagation();
+                if (key) {
+                    perLinkExpandOverrides.set(key, false);
+                    const anchor = contentEl.querySelector<HTMLAnchorElement>(`a.folio-image-link[data-folio-link-key="${CSS.escape(key)}"]`);
+                    if (anchor) {
+                        syncSingleImageLinkExpansion(anchor);
+                    } else {
+                        const block = card.parentElement?.parentElement;
+                        card.remove();
+                        if (block) {
+                            removeCardAndPruneGallery(block, key);
+                        }
+                    }
+                    onLinkLayoutChanged?.();
+                }
+                return;
+            }
+            if (target.closest('.folio-card-open')) {
+                event.preventDefault();
+                event.stopPropagation();
+                if (rawHref) {
+                    latestLinkVscode?.postMessage({
+                        type: 'open-workspace-file',
+                        payload: { path: safeDecodeHref(rawHref) }
+                    });
+                }
+                return;
+            }
+            if (target.closest('.folio-inline-thumb') && key) {
+                event.preventDefault();
+                event.stopPropagation();
+                imageLightbox.open(collectLightboxItems(), key);
+                return;
+            }
+            return;
+        }
+
+        const moved = Math.hypot(event.clientX - linkDownX, event.clientY - linkDownY);
+        const selected = window.getSelection()?.toString().trim() ?? '';
+        if (moved > 5 || selected.length > 0) {
+            return;
+        }
+
+        const anchor = target.closest<HTMLAnchorElement>('a[href]');
+        if (anchor && !anchor.closest('.folio-heading-tools, .folio-table-tools')) {
+            const rawHref = anchor.getAttribute('href')?.trim() ?? '';
+            if (!rawHref) { return; }
+
+            if (rawHref.startsWith('#')) {
+                event.preventDefault();
+                const targetId = safeDecodeHref(rawHref.slice(1));
+                const heading = document.getElementById(targetId);
+                heading?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                return;
+            }
+
+            if (isExternalHref(rawHref)) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            if (anchor.classList.contains('folio-image-link') || isImageHref(rawHref)) {
+                if (event.altKey || event.metaKey || event.ctrlKey) {
+                    latestLinkVscode?.postMessage({
+                        type: 'open-workspace-file',
+                        payload: { path: safeDecodeHref(rawHref) }
+                    });
+                } else {
+                    const key = anchor.dataset.folioLinkKey ?? '';
+                    imageLightbox.open(collectLightboxItems(), key);
+                }
+                return;
+            }
+
+            latestLinkVscode?.postMessage({
+                type: 'open-workspace-file',
+                payload: { path: safeDecodeHref(rawHref) }
+            });
+            return;
+        }
+
+        const img = target.closest<HTMLImageElement>('img:not(.folio-inline-thumb)');
+        if (img && !img.closest('.katex, .folio-heading-tools, .folio-table-tools')) {
+            const items = collectLightboxItems();
+            const key = img.dataset.folioImgKey ?? '';
+            if (key) {
+                event.preventDefault();
+                event.stopPropagation();
+                imageLightbox.open(items, key);
+            }
+        }
+    });
+}
+
+export function enhanceLinksAndImages(vscode: any, onLayoutChanged?: () => void): void {
+    latestLinkVscode = vscode;
+    onLinkLayoutChanged = onLayoutChanged;
+    ensureLinkDelegation();
+
+    const root = document.getElementById('document-content');
+    if (!root) { return; }
+
+    // Clear stale inline galleries before re-enhancing current DOM
+    root.querySelectorAll('.folio-link-gallery').forEach(node => node.remove());
+
+    const occurrenceCounter = new Map<string, number>();
+    const anchors = root.querySelectorAll<HTMLAnchorElement>('a[href]');
+    anchors.forEach(anchor => {
+        if (anchor.closest('.folio-heading-tools, .folio-table-tools, .folio-link-gallery')) {
+            return;
+        }
+        const rawHref = anchor.getAttribute('href')?.trim() ?? '';
+        if (!rawHref || rawHref.startsWith('#') || isExternalHref(rawHref)) {
+            return;
+        }
+
+        if (isImageHref(rawHref)) {
+            const count = (occurrenceCounter.get(rawHref) ?? 0) + 1;
+            occurrenceCounter.set(rawHref, count);
+            const key = `${rawHref}::${count}`;
+
+            anchor.classList.add('folio-image-link');
+            anchor.dataset.folioRawHref = rawHref;
+            anchor.dataset.folioLinkKey = key;
+            if (!anchor.title) {
+                anchor.title = '点击预览大图（Alt/Cmd+点击在编辑器中打开）';
+            }
+
+            if (!anchor.querySelector('img')) {
+                let expandBtn = anchor.nextElementSibling as HTMLButtonElement | null;
+                if (!expandBtn || !expandBtn.classList.contains('folio-image-expand-btn')) {
+                    expandBtn = document.createElement('button');
+                    expandBtn.type = 'button';
+                    expandBtn.className = 'folio-image-expand-btn';
+                    expandBtn.innerHTML = EXPAND_ICON_SVG;
+                    anchor.insertAdjacentElement('afterend', expandBtn);
+                }
+                syncSingleImageLinkExpansion(anchor);
+            }
+            return;
+        }
+
+        anchor.classList.add('folio-file-link');
+        anchor.dataset.folioRawHref = rawHref;
+        if (!anchor.title) {
+            anchor.title = `点击在编辑器中打开 ${safeDecodeHref(rawHref)}`;
+        }
+    });
+
+    const imgs = root.querySelectorAll<HTMLImageElement>('img:not(.folio-inline-thumb)');
+    imgs.forEach((img, idx) => {
+        if (img.closest('.katex, .folio-heading-tools, .folio-table-tools, .folio-link-gallery')) {
+            return;
+        }
+        const parentAnchor = img.closest('a[href]') as HTMLAnchorElement | null;
+        if (parentAnchor && isExternalHref(parentAnchor.getAttribute('href') ?? '')) {
+            return;
+        }
+        if (!img.dataset.folioImgKey) {
+            img.dataset.folioImgKey = `img-${idx}`;
+        }
+    });
 }

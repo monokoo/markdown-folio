@@ -251,6 +251,11 @@
           "type": "boolean",
           "default": true,
           "description": "Enable left-click copying on smart inline code tokens (IDs, file paths, commands, hashes) when no text is dragged/selected."
+        },
+        "markdownFolio.expandImageLinks": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically expand local image links (e.g. [screenshot](image.png)) as inline thumbnail cards below their paragraph or list item."
         }
       }
     },
