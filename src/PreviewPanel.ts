@@ -229,6 +229,10 @@ export class PreviewPanel {
                         this._handleResolveImageDataUri(message.payload);
                         return;
                     }
+                    case 'resolve-text-preview': {
+                        this._handleResolveTextPreview(message.payload);
+                        return;
+                    }
                 }
             },
             null,
@@ -352,6 +356,19 @@ export class PreviewPanel {
         void this._panel.webview.postMessage({
             type: 'image-data-uri-resolved',
             payload: { requestId, dataUri }
+        });
+    }
+
+    private _handleResolveTextPreview(payload: { requestId?: string; path?: string }): void {
+        const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
+        const rawPath = typeof payload?.path === 'string' ? payload.path.trim() : '';
+        if (!requestId || !rawPath) { return; }
+
+        const documentDir = path.dirname(this._document.fileName);
+        const preview = PathResolver.readTextPreviewForLink(rawPath, documentDir, this._document.uri);
+        void this._panel.webview.postMessage({
+            type: 'text-preview-resolved',
+            payload: { requestId, preview }
         });
     }
 
@@ -647,7 +664,7 @@ export class PreviewPanel {
             const { title, author, date, content, lineOffset } = FrontmatterParser.extract(documentContent);
             const previewContent = PathResolver.resolveImagesForWebview(content, documentDir, webview);
             const { html, toc } = PreviewPanel._markdownEngine.renderWithToc(previewContent, lineOffset);
-            const annotatedHtml = PathResolver.annotateImageLinksForWebview(html, documentDir, webview);
+            const annotatedHtml = PathResolver.annotateLocalEvidenceForWebview(html, documentDir, webview, this._document.uri);
 
             rendered = {
                 html: annotatedHtml,
@@ -907,6 +924,14 @@ export class PreviewPanel {
                         <div class="set-row">
                             <span class="set-row-label">Expand image links</span>
                             <span class="set-toggle" data-action="expand-image-links"></span>
+                        </div>
+                        <div class="set-row" title="智能文档结构重组（摘要指标、缺陷卡片、冒号子标题、键值对齐、表后关联列、章节折叠）">
+                            <span class="set-row-label">Smart doc restructure</span>
+                            <span class="set-toggle on" data-action="smart-doc-restructure"></span>
+                        </div>
+                        <div class="set-row" title="插件智能增强（表格状态徽章、裸 Hash 折叠复制、RGB 色块、本地证据内联速览、GFM 告警）">
+                            <span class="set-row-label">Smart enhancements</span>
+                            <span class="set-toggle on" data-action="smart-enhancements"></span>
                         </div>
                     </div>
                 </div>

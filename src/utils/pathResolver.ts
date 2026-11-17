@@ -2,10 +2,25 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 
+export interface TextPreviewPayload {
+    fileName: string;
+    ext: string;
+    content: string;
+    truncated: boolean;
+    totalBytes: number;
+}
+
 export class PathResolver {
     private static readonly _base64Cache = new Map<string, { mtimeMs: number; dataUri: string }>();
     private static readonly _MAX_CACHE_ENTRIES = 64;
     private static readonly _IMAGE_EXT_REGEX = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
+    private static readonly _TEXT_PREVIEW_EXT_REGEX = /\.(json|jsonl|txt|log|csv|tsv|yml|yaml|toml|ini|conf|xml|sql|md)$/i;
+    private static readonly _BARE_EVIDENCE_FILE_REGEX = /(?<![A-Za-z0-9_./:-@])([A-Za-z0-9_\u4e00-\u9fa5][A-Za-z0-9_.\u4e00-\u9fa5/-]{0,120}\.(?:png|jpe?g|gif|webp|svg|bmp|json|jsonl|txt|log|csv|tsv|yml|yaml|md))(?![A-Za-z0-9_./*-])/gi;
+    private static readonly _CODE_SINGLE_FILE_REGEX = /^([A-Za-z0-9_\u4e00-\u9fa5][A-Za-z0-9_.\u4e00-\u9fa5/-]{0,120}\.(?:png|jpe?g|gif|webp|svg|bmp|json|jsonl|txt|log|csv|tsv|yml|yaml|md))$/i;
+
+    private static _escapeAttr(value: string): string {
+        return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    }
 
     public static stripQueryAndHash(raw: string): string {
         return raw.split('#')[0].split('?')[0];
@@ -34,7 +49,17 @@ export class PathResolver {
         if (!trimmed || trimmed.startsWith('#') || PathResolver.isRemoteOrDataUri(trimmed)) {
             return false;
         }
-        return PathResolver._IMAGE_EXT_REGEX.test(PathResolver.stripQueryAndHash(trimmed));
+        const stripped = PathResolver.stripQueryAndHash(trimmed);
+        return !stripped.includes('*') && PathResolver._IMAGE_EXT_REGEX.test(stripped);
+    }
+
+    public static isTextPreviewFilePath(rawUrl: string): boolean {
+        const trimmed = rawUrl.trim();
+        if (!trimmed || trimmed.startsWith('#') || PathResolver.isRemoteOrDataUri(trimmed)) {
+            return false;
+        }
+        const stripped = PathResolver.stripQueryAndHash(trimmed);
+        return !stripped.includes('*') && PathResolver._TEXT_PREVIEW_EXT_REGEX.test(stripped);
     }
 
     private static _getAllowedRoots(documentDir: string): string[] {
@@ -205,42 +230,223 @@ export class PathResolver {
     }
 
     /**
-     * Attaches zero-I/O webview URIs via `data-folio-img-src` on local image links (`<a href="*.png">`)
-     * so Lightbox and inline thumbnail cards can render them without mutating original hrefs.
+     * Backward-compatible alias for annotating local evidence links & bare filenames.
      */
     public static annotateImageLinksForWebview(
         html: string,
         documentDir: string,
         webview: vscode.Webview
     ): string {
+        return PathResolver.annotateLocalEvidenceForWebview(html, documentDir, webview);
+    }
+
+    /**
+     * Annotates local image & text/JSON evidence across:
+     * 1. `<a href="...">` links (`data-folio-img-src` / `data-folio-data-preview="true"`)
+     * 2. Existing inline `<code>file.ext</code>` and bare text filenames (`<span class="folio-bare-file">`)
+     *    ONLY when the file genuinely exists on disk (0% false positive on hypothetical filenames).
+     */
+    public static annotateLocalEvidenceForWebview(
+        html: string,
+        documentDir: string,
+        webview: vscode.Webview,
+        documentUri?: vscode.Uri
+    ): string {
         const allowedRoots = PathResolver._getAllowedRoots(documentDir);
-        const anchorRegex = /<a\b([^>]*?)\bhref="([^"]+)"([^>]*)>/gi;
-
-        return html.replace(anchorRegex, (match, before: string, rawHref: string, after: string) => {
-            if (!PathResolver.isImageFilePath(rawHref)) {
-                return match;
+        const candidateCache = new Map<string, string | null>();
+        const resolveCached = (filePath: string): string | null => {
+            if (!candidateCache.has(filePath)) {
+                candidateCache.set(filePath, PathResolver.resolveCandidateFile(filePath, documentDir, documentUri));
             }
-            if (before.includes('data-folio-img-src=') || after.includes('data-folio-img-src=')) {
-                return match;
-            }
+            return candidateCache.get(filePath) ?? null;
+        };
 
+        const buildWebviewImgSrc = (resolvedPath: string): string | null => {
             try {
-                const pathPart = PathResolver.safeDecodePath(PathResolver.stripQueryAndHash(rawHref));
-                const resolved = pathPart.startsWith('file://')
-                    ? vscode.Uri.parse(pathPart).fsPath
-                    : path.resolve(path.isAbsolute(pathPart) ? pathPart : path.join(documentDir, pathPart));
-
-                if (allowedRoots.some(root => resolved.startsWith(root))) {
-                    const webviewUri = webview.asWebviewUri(vscode.Uri.file(resolved)).toString()
-                        .replace(/&/g, '&amp;')
-                        .replace(/"/g, '&quot;');
-                    return `<a${before} href="${rawHref}" data-folio-img-src="${webviewUri}"${after}>`;
+                if (allowedRoots.some(root => resolvedPath.startsWith(root))) {
+                    return PathResolver._escapeAttr(webview.asWebviewUri(vscode.Uri.file(resolvedPath)).toString());
                 }
             } catch {
-                // Fall back to on-demand RPC resolution in webview
+                // Fall back to on-demand data URI resolution in webview
             }
-            return match;
-        });
+            return null;
+        };
+
+        const parts = html.split(/(<[^>]+>)/g);
+        const out: string[] = [];
+        let preDepth = 0;
+        let aDepth = 0;
+        let scriptStyleDepth = 0;
+        let codeDepth = 0;
+
+        for (let i = 0; i < parts.length; i++) {
+            const part = parts[i];
+            if (!part) { continue; }
+
+            if (part.startsWith('<')) {
+                const lowerTag = part.toLowerCase();
+                if (/^<pre(?:\s|>|$)/.test(lowerTag)) {
+                    preDepth++;
+                } else if (/^<\/pre(?:\s|>|$)/.test(lowerTag)) {
+                    preDepth = Math.max(0, preDepth - 1);
+                } else if (/^<(?:script|style)(?:\s|>|$)/.test(lowerTag)) {
+                    scriptStyleDepth++;
+                } else if (/^<\/(?:script|style)(?:\s|>|$)/.test(lowerTag)) {
+                    scriptStyleDepth = Math.max(0, scriptStyleDepth - 1);
+                } else if (/^<a(?:\s|>|$)/.test(lowerTag)) {
+                    aDepth++;
+                    const anchorMatch = part.match(/^<a\b([^>]*?)\bhref="([^"]+)"([^>]*)>$/i);
+                    if (anchorMatch) {
+                        const [, before, rawHref, after] = anchorMatch;
+                        if (PathResolver.isImageFilePath(rawHref) && !before.includes('data-folio-img-src=') && !after.includes('data-folio-img-src=')) {
+                            try {
+                                const pathPart = PathResolver.safeDecodePath(PathResolver.stripQueryAndHash(rawHref));
+                                const resolved = pathPart.startsWith('file://')
+                                    ? vscode.Uri.parse(pathPart).fsPath
+                                    : path.resolve(path.isAbsolute(pathPart) ? pathPart : path.join(documentDir, pathPart));
+                                const src = buildWebviewImgSrc(resolved);
+                                if (src) {
+                                    out.push(`<a${before} href="${rawHref}" data-folio-img-src="${src}"${after}>`);
+                                    continue;
+                                }
+                            } catch {
+                                // ignore invalid URI
+                            }
+                        } else if (PathResolver.isTextPreviewFilePath(rawHref) && !before.includes('data-folio-data-preview=') && !after.includes('data-folio-data-preview=')) {
+                            const pathPart = PathResolver.stripQueryAndHash(rawHref);
+                            if (resolveCached(pathPart)) {
+                                out.push(`<a${before} href="${rawHref}" data-folio-data-preview="true"${after}>`);
+                                continue;
+                            }
+                        }
+                    }
+                    out.push(part);
+                    continue;
+                } else if (/^<\/a(?:\s|>|$)/.test(lowerTag)) {
+                    aDepth = Math.max(0, aDepth - 1);
+                } else if (/^<code(?:\s|>|$)/.test(lowerTag)) {
+                    codeDepth++;
+                    if (preDepth === 0 && aDepth === 0 && scriptStyleDepth === 0 && i + 2 < parts.length && /^<\/code\s*>$/i.test(parts[i + 2])) {
+                        const innerText = parts[i + 1].trim();
+                        const fileMatch = innerText.match(PathResolver._CODE_SINGLE_FILE_REGEX);
+                        if (fileMatch) {
+                            const fileName = fileMatch[1];
+                            const resolved = resolveCached(fileName);
+                            if (resolved) {
+                                const attrRaw = PathResolver._escapeAttr(fileName);
+                                if (PathResolver.isImageFilePath(fileName) && !lowerTag.includes('data-folio-evidence-kind=')) {
+                                    const imgSrc = buildWebviewImgSrc(resolved);
+                                    const imgSrcAttr = imgSrc ? ` data-folio-img-src="${imgSrc}"` : '';
+                                    out.push(part.slice(0, -1) + ` data-folio-evidence-kind="image" data-folio-raw-href="${attrRaw}"${imgSrcAttr}>`);
+                                    continue;
+                                }
+                                if (PathResolver.isTextPreviewFilePath(fileName) && !lowerTag.includes('data-folio-evidence-kind=')) {
+                                    out.push(part.slice(0, -1) + ` data-folio-evidence-kind="data" data-folio-raw-href="${attrRaw}" data-folio-data-preview="true">`);
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                } else if (/^<\/code(?:\s|>|$)/.test(lowerTag)) {
+                    codeDepth = Math.max(0, codeDepth - 1);
+                }
+
+                out.push(part);
+                continue;
+            }
+
+            if (preDepth === 0 && aDepth === 0 && scriptStyleDepth === 0 && codeDepth === 0) {
+                const replaced = part.replace(PathResolver._BARE_EVIDENCE_FILE_REGEX, (match, fileName: string) => {
+                    const resolved = resolveCached(fileName);
+                    if (!resolved) {
+                        return match;
+                    }
+                    const attrRaw = PathResolver._escapeAttr(fileName);
+                    if (PathResolver.isImageFilePath(fileName)) {
+                        const imgSrc = buildWebviewImgSrc(resolved);
+                        const imgSrcAttr = imgSrc ? ` data-folio-img-src="${imgSrc}"` : '';
+                        return `<span class="folio-bare-file" data-folio-evidence-kind="image" data-folio-raw-href="${attrRaw}"${imgSrcAttr}>${match}</span>`;
+                    }
+                    if (PathResolver.isTextPreviewFilePath(fileName)) {
+                        return `<span class="folio-bare-file" data-folio-evidence-kind="data" data-folio-raw-href="${attrRaw}" data-folio-data-preview="true">${match}</span>`;
+                    }
+                    return match;
+                });
+                out.push(replaced);
+                continue;
+            }
+
+            out.push(part);
+        }
+
+        return out.join('');
+    }
+
+    public static readTextPreviewForLink(
+        rawHref: string,
+        documentDir: string,
+        documentUri?: vscode.Uri
+    ): TextPreviewPayload | null {
+        const MAX_BYTES = 49152;
+        const MAX_LINES = 160;
+
+        const pathPart = PathResolver.stripQueryAndHash(rawHref);
+        if (!PathResolver.isTextPreviewFilePath(pathPart)) {
+            return null;
+        }
+        const resolved = PathResolver.resolveCandidateFile(pathPart, documentDir, documentUri);
+        if (!resolved) {
+            return null;
+        }
+
+        let fd: number | null = null;
+        try {
+            const stat = fs.statSync(resolved);
+            const totalBytes = stat.size;
+            const toRead = Math.min(totalBytes, MAX_BYTES);
+            const buf = Buffer.alloc(toRead);
+            fd = fs.openSync(resolved, 'r');
+            const bytesRead = toRead > 0 ? fs.readSync(fd, buf, 0, toRead, 0) : 0;
+
+            // Reject binary content if NUL byte found in header bytes
+            const inspectLen = Math.min(bytesRead, 4096);
+            if (buf.subarray(0, inspectLen).includes(0)) {
+                return null;
+            }
+
+            let content = buf.toString('utf8', 0, bytesRead);
+            let truncated = totalBytes > bytesRead;
+            const ext = path.extname(resolved).toLowerCase().replace(/^\./, '') || 'txt';
+
+            if (ext === 'json' && !truncated) {
+                try {
+                    const parsed = JSON.parse(content);
+                    content = JSON.stringify(parsed, null, 2);
+                } catch {
+                    // keep original JSON text when malformed
+                }
+            }
+
+            const lines = content.split(/\r?\n/);
+            if (lines.length > MAX_LINES) {
+                content = lines.slice(0, MAX_LINES).join('\n');
+                truncated = true;
+            }
+
+            return {
+                fileName: path.basename(resolved),
+                ext,
+                content,
+                truncated,
+                totalBytes,
+            };
+        } catch {
+            return null;
+        } finally {
+            if (fd !== null) {
+                try { fs.closeSync(fd); } catch { /* ignore close error */ }
+            }
+        }
     }
 
     public static readImageDataUriForLink(

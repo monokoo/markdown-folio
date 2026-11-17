@@ -10,6 +10,8 @@
  * Uses getBoundingClientRect() instead of offsetTop to handle
  * transform:scale() on #document-paper correctly at any zoom level.
  */
+import { expandCollapsedAncestors } from './smartDocument';
+
 export class ScrollSync {
     private _container: HTMLElement | null;
     private _index: Array<{ line: number; el: HTMLElement; top: number }> = [];
@@ -60,6 +62,7 @@ export class ScrollSync {
         const scrollTop = container.scrollTop;
         const anchors = container.querySelectorAll<HTMLElement>('[data-source-line]');
         this._index = Array.from(anchors)
+            .filter(el => !el.closest('.folio-section-body.is-collapsed'))
             .map(el => ({
                 line: parseInt(el.getAttribute('data-source-line') ?? '0', 10),
                 el,
@@ -157,7 +160,23 @@ export class ScrollSync {
 
     private _scrollToLine(targetLine: number): void {
         const container = this._container;
-        if (!container || this._index.length === 0) { return; }
+        if (!container) { return; }
+
+        // If targetLine resides inside a collapsed section, expand it before resolving offsets
+        const allAnchors = Array.from(container.querySelectorAll<HTMLElement>('[data-source-line]'));
+        let candidateEl: HTMLElement | null = null;
+        let candidateLine = -1;
+        for (const el of allAnchors) {
+            const line = parseInt(el.getAttribute('data-source-line') ?? '0', 10);
+            if (line <= targetLine && line >= candidateLine) {
+                candidateLine = line;
+                candidateEl = el;
+            }
+        }
+        if (candidateEl && expandCollapsedAncestors(candidateEl)) {
+            this.rebuildIndex();
+        }
+        if (this._index.length === 0) { return; }
 
         // Binary search for low anchor (largest line <= targetLine) and high (smallest line > targetLine)
         let lo = 0;

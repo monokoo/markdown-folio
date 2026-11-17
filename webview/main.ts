@@ -8,10 +8,13 @@ import {
     enhanceSectionsAndTables,
     FindInPage,
     handleResolvedImageDataUri,
+    handleResolvedTextPreview,
     setExpandImageLinksEnabled,
     setInlineCodeCopyEnabled,
     showPreviewToast
 } from './interactions';
+import { applySmartDocRestructure, applySmartEnhancements } from './smartDocument';
+import { TocItem } from '../src/shared/types';
 import './styles/theme.css';
 import './styles/document.css';
 import './styles/toolbar.css';
@@ -36,6 +39,9 @@ type MermaidApi = {
 let mermaidLoadPromise: Promise<MermaidApi> | null = null;
 let currentTableWrapThreshold = 320;
 let currentExpandImageLinks = false;
+let currentSmartEnhancements = true;
+let currentSmartDocRestructure = true;
+let lastRenderPayload: { html: string; toc: TocItem[] } | null = null;
 
 function updateTableOverflowHint(wrapper: HTMLElement) {
     const hasScroll = wrapper.scrollWidth > wrapper.clientWidth + 2;
@@ -313,6 +319,20 @@ document.addEventListener('markdown-folio:expand-image-links-changed', (event: E
         setExpandImageLinksEnabled(currentExpandImageLinks, true);
     }
 });
+document.addEventListener('markdown-folio:smart-enhancements-changed', (event: Event) => {
+    const customEvent = event as CustomEvent<{ enabled: boolean }>;
+    if (typeof customEvent.detail?.enabled === 'boolean') {
+        currentSmartEnhancements = customEvent.detail.enabled;
+        runRenderPipeline(true);
+    }
+});
+document.addEventListener('markdown-folio:smart-doc-restructure-changed', (event: Event) => {
+    const customEvent = event as CustomEvent<{ enabled: boolean }>;
+    if (typeof customEvent.detail?.enabled === 'boolean') {
+        currentSmartDocRestructure = customEvent.detail.enabled;
+        runRenderPipeline(true);
+    }
+});
 window.addEventListener('resize', scheduleViewportLayoutSync);
 syncToolbarPosition();
 
@@ -441,6 +461,72 @@ function enhanceCodeBlockCopyButtons() {
     });
 }
 
+function runRenderPipeline(preserveScroll: boolean): void {
+    if (!lastRenderPayload) { return; }
+
+    const scrollContainer = document.getElementById('document-container');
+    const prevScrollTop = preserveScroll && scrollContainer ? scrollContainer.scrollTop : 0;
+
+    renderer.render(lastRenderPayload.html);
+    document.body.classList.toggle('folio-smart-restructure', currentSmartDocRestructure);
+    document.body.classList.toggle('folio-smart-enhance', currentSmartEnhancements);
+
+    const contentEl = document.getElementById('document-content');
+    const onLayoutShift = () => {
+        syncPaperScaleHeight();
+        scrollSync.rebuildIndex();
+    };
+
+    if (contentEl) {
+        if (!currentSmartEnhancements) {
+            contentEl.querySelectorAll<HTMLElement>('.folio-bare-file').forEach(el => {
+                el.replaceWith(document.createTextNode(el.textContent ?? ''));
+            });
+            contentEl.querySelectorAll<HTMLElement>('code[data-folio-evidence-kind]').forEach(el => {
+                delete el.dataset.folioEvidenceKind;
+                delete el.dataset.folioDataPreview;
+            });
+            contentEl.normalize();
+        }
+        if (currentSmartDocRestructure) {
+            applySmartDocRestructure(contentEl, onLayoutShift);
+        }
+        if (currentSmartEnhancements) {
+            applySmartEnhancements(contentEl);
+        }
+    }
+
+    enhanceCodeBlockCopyButtons();
+    enhanceTables(currentTableWrapThreshold);
+    enhanceInlineCodes(vscode);
+    enhanceSectionsAndTables(vscode);
+    enhanceLinksAndImages(vscode, onLayoutShift, currentSmartEnhancements);
+    toc.render(lastRenderPayload.toc);
+    findInPage.refresh();
+
+    scrollSync.rebuildIndex();
+    syncPaperScaleHeight();
+    if (preserveScroll && scrollContainer) {
+        scrollContainer.scrollTop = prevScrollTop;
+    }
+    updateReadingProgress();
+    setTimeout(syncToolbarPosition, 50);
+
+    const mermaidCodes = document.querySelectorAll<HTMLElement>('.language-mermaid');
+    if (mermaidCodes.length > 0) {
+        const nodes = Array.from(mermaidCodes);
+        runMermaid(nodes, false)
+            .then(() => {
+                syncPaperScaleHeight();
+                scrollSync.rebuildIndex();
+            })
+            .catch(() => {
+                syncPaperScaleHeight();
+                scrollSync.rebuildIndex();
+            });
+    }
+}
+
 // Handle messages from the extension host
 window.addEventListener('message', event => {
     const message = event.data;
@@ -452,41 +538,11 @@ window.addEventListener('message', event => {
                 toolbar.syncFromSettings(config);
                 scrollSync.setEnabled(config.scrollSync !== false);
             }
-            renderer.render(message.payload.html);
-            enhanceCodeBlockCopyButtons();
-            enhanceTables(currentTableWrapThreshold);
-            enhanceInlineCodes(vscode);
-            enhanceSectionsAndTables(vscode);
-            enhanceLinksAndImages(vscode, () => {
-                syncPaperScaleHeight();
-                scrollSync.rebuildIndex();
-            });
-            toc.render(message.payload.toc);
-            findInPage.refresh();
-
-            // Build scroll index immediately so sync works for non-mermaid content
-            scrollSync.rebuildIndex();
-            syncPaperScaleHeight();
-            updateReadingProgress();
-
-            // Re-sync toolbar after TOC sidebar show/hide changes layout
-            setTimeout(syncToolbarPosition, 50);
-
-            // Render only newly added or modified mermaid diagrams (unchanged ones were restored from SVG cache)
-            const mermaidCodes = document.querySelectorAll<HTMLElement>('.language-mermaid');
-            if (mermaidCodes.length > 0) {
-                const nodes = Array.from(mermaidCodes);
-                // Rebuild index again after Mermaid finishes (async DOM changes shift positions)
-                runMermaid(nodes, false)
-                    .then(() => {
-                        syncPaperScaleHeight();
-                        scrollSync.rebuildIndex();
-                    })
-                    .catch(() => {
-                        syncPaperScaleHeight();
-                        scrollSync.rebuildIndex();
-                    });
-            }
+            lastRenderPayload = {
+                html: message.payload.html ?? '',
+                toc: Array.isArray(message.payload.toc) ? message.payload.toc : []
+            };
+            runRenderPipeline(false);
             break;
         }
         case 'settings-updated': {
@@ -494,13 +550,18 @@ window.addEventListener('message', event => {
                 Array.from(document.body.classList).find(cls => cls.endsWith('-mode')) ?? '';
             const oldTheme = getActiveThemeClass();
             const prevThreshold = currentTableWrapThreshold;
+            const prevSmartEnhance = currentSmartEnhancements;
+            const prevSmartRestructure = currentSmartDocRestructure;
             applySettings(message.payload);
             toolbar.syncFromSettings(message.payload);
             const themeChanged = oldTheme !== getActiveThemeClass();
+            const modeChanged = prevSmartEnhance !== currentSmartEnhancements || prevSmartRestructure !== currentSmartDocRestructure;
             if (message.payload.scrollSync !== undefined) {
                 scrollSync.setEnabled(message.payload.scrollSync !== false);
             }
-            if (
+            if (modeChanged && lastRenderPayload) {
+                runRenderPipeline(true);
+            } else if (
                 currentTableWrapThreshold !== prevThreshold ||
                 message.payload.fontSize !== undefined ||
                 message.payload.headingSize !== undefined ||
@@ -514,7 +575,7 @@ window.addEventListener('message', event => {
                 scrollSync.rebuildIndex();
             }
             setTimeout(syncToolbarPosition, 50);
-            
+
             // Re-render mermaid if theme actually changed
             if (themeChanged) {
                 const mermaidCodes = document.querySelectorAll<HTMLElement>('.mermaid');
@@ -539,6 +600,10 @@ window.addEventListener('message', event => {
             handleResolvedImageDataUri(message.payload ?? {});
             break;
         }
+        case 'text-preview-resolved': {
+            handleResolvedTextPreview(message.payload ?? {});
+            break;
+        }
     }
 });
 
@@ -556,6 +621,8 @@ function applySettings(settings: {
     tableWrapThreshold?: number;
     clickInlineCodeCopy?: boolean;
     expandImageLinks?: boolean;
+    smartEnhancements?: boolean;
+    smartDocRestructure?: boolean;
 }) {
     const root = document.documentElement;
     const defaultHeadingFont = "'Merriweather', Georgia, serif";
@@ -570,6 +637,12 @@ function applySettings(settings: {
         const changed = currentExpandImageLinks !== settings.expandImageLinks;
         currentExpandImageLinks = settings.expandImageLinks;
         setExpandImageLinksEnabled(currentExpandImageLinks, changed);
+    }
+    if (settings.smartEnhancements !== undefined) {
+        currentSmartEnhancements = settings.smartEnhancements;
+    }
+    if (settings.smartDocRestructure !== undefined) {
+        currentSmartDocRestructure = settings.smartDocRestructure;
     }
     if (settings.headingFont) {
         root.style.setProperty('--font-heading', settings.headingFont);

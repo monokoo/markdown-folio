@@ -14,6 +14,8 @@ export interface PreviewSettings {
     tableWrapThreshold: number;
     clickInlineCodeCopy: boolean;
     expandImageLinks: boolean;
+    smartEnhancements: boolean;
+    smartDocRestructure: boolean;
 }
 
 const DEFAULTS: PreviewSettings = {
@@ -30,6 +32,8 @@ const DEFAULTS: PreviewSettings = {
     tableWrapThreshold: 320,
     clickInlineCodeCopy: true,
     expandImageLinks: false,
+    smartEnhancements: true,
+    smartDocRestructure: true,
 };
 
 export class SettingsManager {
@@ -51,6 +55,8 @@ export class SettingsManager {
             tableWrapThreshold: SettingsManager._clampThreshold(cfg.get<number>('tableWrapThreshold', DEFAULTS.tableWrapThreshold)),
             clickInlineCodeCopy: cfg.get<boolean>('clickInlineCodeCopy', DEFAULTS.clickInlineCodeCopy),
             expandImageLinks: cfg.get<boolean>('expandImageLinks', DEFAULTS.expandImageLinks),
+            smartEnhancements: cfg.get<boolean>('smartEnhancements', DEFAULTS.smartEnhancements),
+            smartDocRestructure: cfg.get<boolean>('smartDocRestructure', DEFAULTS.smartDocRestructure),
         };
     }
 

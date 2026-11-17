@@ -1,4 +1,5 @@
 import { TocItem } from '../src/shared/types';
+import { expandCollapsedAncestors } from './smartDocument';
 
 export class Toc {
     private _container: HTMLElement;
@@ -185,6 +186,7 @@ export class Toc {
             item.addEventListener('click', () => {
                 const element = slug ? document.getElementById(slug) : null;
                 if (element) {
+                    expandCollapsedAncestors(element);
                     element.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     this._setActiveSlug(slug, true);
                 }

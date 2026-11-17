@@ -79,10 +79,24 @@ export class Toolbar {
             const el = document.getElementById('document-content');
             if (!el) return null;
             const clone = el.cloneNode(true) as HTMLElement;
-            clone.querySelectorAll('.folio-heading-tools, .folio-table-tools, .folio-image-expand-btn, .folio-link-gallery').forEach(node => node.remove());
-            clone.querySelectorAll('mark.folio-find-mark').forEach(mark => {
-                mark.replaceWith(document.createTextNode(mark.textContent ?? ''));
+            clone.querySelectorAll(
+                '.folio-heading-tools, .folio-table-tools, .folio-image-expand-btn, .folio-data-expand-btn, .folio-link-gallery, .folio-restructure-only, .folio-color-swatch, .folio-hash-short'
+            ).forEach(node => node.remove());
+            clone.querySelectorAll('.folio-section-body.is-collapsed').forEach(node => node.classList.remove('is-collapsed'));
+            clone.querySelectorAll<HTMLElement>('.folio-hash-chip').forEach(chip => {
+                chip.replaceWith(document.createTextNode(chip.dataset.rawCode ?? chip.querySelector('.folio-hash-full')?.textContent ?? ''));
             });
+            clone.querySelectorAll(
+                'mark.folio-find-mark, .folio-exec-summary-card, .folio-section-body, .folio-kv-key, .folio-status-pill, .folio-rgb-inline, .folio-bare-file, .folio-alert-syntax, code.folio-auto-code'
+            ).forEach(node => {
+                const parent = node.parentNode;
+                if (!parent) return;
+                while (node.firstChild) {
+                    parent.insertBefore(node.firstChild, node);
+                }
+                node.remove();
+            });
+            clone.normalize();
             return {
                 html: '<div class="markdown-folio-content">\n' + clone.innerHTML + '\n</div>',
                 text: clone.innerText
@@ -372,6 +386,24 @@ export class Toolbar {
                         payload: { expandImageLinks: isEnabled }
                     });
                 }
+
+                if (toggle.dataset.action === 'smart-doc-restructure') {
+                    const isEnabled = toggle.classList.contains('on');
+                    document.dispatchEvent(new CustomEvent('markdown-folio:smart-doc-restructure-changed', { detail: { enabled: isEnabled } }));
+                    this.vscode.postMessage({
+                        type: 'update-settings',
+                        payload: { smartDocRestructure: isEnabled }
+                    });
+                }
+
+                if (toggle.dataset.action === 'smart-enhancements') {
+                    const isEnabled = toggle.classList.contains('on');
+                    document.dispatchEvent(new CustomEvent('markdown-folio:smart-enhancements-changed', { detail: { enabled: isEnabled } }));
+                    this.vscode.postMessage({
+                        type: 'update-settings',
+                        payload: { smartEnhancements: isEnabled }
+                    });
+                }
             });
         });
     }
@@ -431,6 +463,8 @@ export class Toolbar {
         pageWidth?: 'narrow' | 'standard' | 'wide' | 'fluid' | 'full';
         tableWrapThreshold?: number;
         expandImageLinks?: boolean;
+        smartDocRestructure?: boolean;
+        smartEnhancements?: boolean;
     }) {
         // Sync font chips
         if (settings.bodyFont !== undefined) {
@@ -507,6 +541,22 @@ export class Toolbar {
             const toggle = document.querySelector<HTMLElement>('.set-toggle[data-action="expand-image-links"]');
             if (toggle) {
                 toggle.classList.toggle('on', settings.expandImageLinks);
+            }
+        }
+
+        // Sync Smart doc restructure toggle
+        if (settings.smartDocRestructure !== undefined) {
+            const toggle = document.querySelector<HTMLElement>('.set-toggle[data-action="smart-doc-restructure"]');
+            if (toggle) {
+                toggle.classList.toggle('on', settings.smartDocRestructure);
+            }
+        }
+
+        // Sync Smart enhancements toggle
+        if (settings.smartEnhancements !== undefined) {
+            const toggle = document.querySelector<HTMLElement>('.set-toggle[data-action="smart-enhancements"]');
+            if (toggle) {
+                toggle.classList.toggle('on', settings.smartEnhancements);
             }
         }
 

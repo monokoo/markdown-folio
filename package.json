@@ -256,6 +256,16 @@
           "type": "boolean",
           "default": false,
           "description": "Automatically expand local image links (e.g. [screenshot](image.png)) as inline thumbnail cards below their paragraph or list item."
+        },
+        "markdownFolio.smartEnhancements": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable smart visual enhancements (table status pills, collapsed bare hex hash chips, inline color swatches, bare technical tokens, external link badges, local evidence quick preview, and GFM alert cards)."
+        },
+        "markdownFolio.smartDocRestructure": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable deterministic document restructuring (executive summary KPI cards, defect callout cards, colon subheadings, Key:Value line splitting & lead key highlights, mapped post-table columns, and collapsible sections)."
         }
       }
     },

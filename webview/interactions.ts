@@ -1,3 +1,5 @@
+import { expandCollapsedAncestors } from './smartDocument';
+
 type TokenCategory =
     | '路径'
     | '命令'
@@ -138,8 +140,59 @@ export function tableToTsv(table: HTMLTableElement): string {
 
 function getHeadingCleanText(heading: HTMLElement): string {
     const clone = heading.cloneNode(true) as HTMLElement;
-    clone.querySelectorAll('.folio-heading-tools').forEach(node => node.remove());
+    clone.querySelectorAll('.folio-heading-tools, .folio-restructure-only').forEach(node => node.remove());
     return (clone.textContent ?? '').trim();
+}
+
+function getCleanElementForCopy(el: Element): HTMLElement {
+    const clone = el.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('.folio-image-expand-btn, .folio-data-expand-btn, .folio-link-gallery, .folio-restructure-only, .folio-color-swatch, .folio-hash-short, .folio-alert-syntax').forEach(node => node.remove());
+    return clone;
+}
+
+function appendSectionNodeMarkdown(node: Element, parts: string[], level: number): void {
+    if (node.classList.contains('folio-section-fold-pill') || node.classList.contains('folio-restructure-only')) {
+        return;
+    }
+    if (node.classList.contains('folio-section-body')) {
+        Array.from(node.children).forEach(child => appendSectionNodeMarkdown(child, parts, level));
+        return;
+    }
+    if (node.classList.contains('table-wrapper')) {
+        const cleanWrapper = getCleanElementForCopy(node);
+        const table = cleanWrapper.querySelector('table');
+        if (table) {
+            parts.push(tableToMarkdown(table));
+        }
+        return;
+    }
+    if (node.tagName === 'PRE') {
+        const clone = node.cloneNode(true) as HTMLElement;
+        clone.querySelectorAll('.code-block-header').forEach(n => n.remove());
+        parts.push('```\n' + (clone.textContent ?? '').trim() + '\n```');
+        return;
+    }
+    if (node.tagName === 'UL' || node.tagName === 'OL') {
+        const isOrdered = node.tagName === 'OL';
+        const items = Array.from(node.querySelectorAll(':scope > li')).map((li, i) => {
+            const cleanLi = getCleanElementForCopy(li);
+            return `${isOrdered ? `${i + 1}.` : '-'} ${(cleanLi.textContent ?? '').trim()}`;
+        });
+        if (items.length > 0) {
+            parts.push(items.join('\n'));
+        }
+        return;
+    }
+    if (/^H[1-6]$/.test(node.tagName)) {
+        const subLevel = parseInt(node.tagName.slice(1), 10);
+        parts.push(`${'#'.repeat(subLevel)} ${getHeadingCleanText(node as HTMLElement)}`);
+        return;
+    }
+    const clean = getCleanElementForCopy(node);
+    const text = (clean.textContent ?? '').trim();
+    if (text) {
+        parts.push(text);
+    }
 }
 
 function extractSectionText(heading: HTMLElement): string {
@@ -152,32 +205,7 @@ function extractSectionText(heading: HTMLElement): string {
             const nextLevel = parseInt(cur.tagName.slice(1), 10);
             if (nextLevel <= level) { break; }
         }
-        if (cur.classList.contains('table-wrapper')) {
-            const table = cur.querySelector('table');
-            if (table) {
-                parts.push(tableToMarkdown(table));
-            }
-        } else if (cur.tagName === 'PRE') {
-            const clone = cur.cloneNode(true) as HTMLElement;
-            clone.querySelectorAll('.code-block-header').forEach(node => node.remove());
-            parts.push('```\n' + (clone.textContent ?? '').trim() + '\n```');
-        } else if (cur.tagName === 'UL' || cur.tagName === 'OL') {
-            const isOrdered = cur.tagName === 'OL';
-            const items = Array.from(cur.querySelectorAll(':scope > li')).map((li, i) =>
-                `${isOrdered ? `${i + 1}.` : '-'} ${(li.textContent ?? '').trim()}`
-            );
-            if (items.length > 0) {
-                parts.push(items.join('\n'));
-            }
-        } else if (/^H[1-6]$/.test(cur.tagName)) {
-            const subLevel = parseInt(cur.tagName.slice(1), 10);
-            parts.push(`${'#'.repeat(subLevel)} ${getHeadingCleanText(cur as HTMLElement)}`);
-        } else {
-            const text = (cur.textContent ?? '').trim();
-            if (text) {
-                parts.push(text);
-            }
-        }
+        appendSectionNodeMarkdown(cur, parts, level);
         cur = cur.nextElementSibling;
     }
     return parts.join('\n\n');
@@ -197,9 +225,9 @@ function updateInlineCodeTitle(el: HTMLElement, category: TokenCategory): void {
 export function setInlineCodeCopyEnabled(enabled: boolean): void {
     inlineCodeCopyEnabled = enabled;
     document.body.classList.toggle('inline-code-copy-enabled', enabled);
-    document.querySelectorAll<HTMLElement>('#document-content code.folio-copyable-code').forEach(el => {
-        const category = (el.dataset.tokenCategory as TokenCategory | undefined) ?? '标识';
-        updateInlineCodeTitle(el, category);
+    document.querySelectorAll<HTMLElement>('#document-content .folio-copyable-code').forEach(el => {
+        const category = (el.dataset.tokenCategory as TokenCategory | 'Hash/Trace' | undefined) ?? '标识';
+        updateInlineCodeTitle(el, category as TokenCategory);
     });
 }
 
@@ -222,14 +250,14 @@ function ensureInlineCodeDelegation(): void {
     inlineCopyDelegated = true;
 
     contentEl.addEventListener('mousedown', (event: MouseEvent) => {
-        const target = (event.target as Element | null)?.closest('code.folio-copyable-code');
+        const target = (event.target as Element | null)?.closest('.folio-copyable-code');
         if (!target) { return; }
         inlineDownX = event.clientX;
         inlineDownY = event.clientY;
     });
 
     contentEl.addEventListener('click', async (event: MouseEvent) => {
-        const el = (event.target as Element | null)?.closest('code.folio-copyable-code') as HTMLElement | null;
+        const el = (event.target as Element | null)?.closest('.folio-copyable-code') as HTMLElement | null;
         if (!el) { return; }
 
         const moved = Math.hypot(event.clientX - inlineDownX, event.clientY - inlineDownY);
@@ -243,6 +271,9 @@ function ensureInlineCodeDelegation(): void {
             event.preventDefault();
             event.stopPropagation();
             latestInlineCopyVscode?.postMessage({ type: 'open-workspace-file', payload: { path: codeText } });
+            return;
+        }
+        if (el.dataset.folioEvidenceKind === 'image' && !(event.altKey || event.metaKey || event.ctrlKey)) {
             return;
         }
 
@@ -514,7 +545,7 @@ export class FindInPage {
             acceptNode(node) {
                 const parent = node.parentElement;
                 if (!parent) { return NodeFilter.FILTER_REJECT; }
-                if (parent.closest('.folio-heading-tools, .folio-table-tools, .folio-image-expand-btn, .folio-link-gallery, .code-block-header, .katex-mathml, script, style')) {
+                if (parent.closest('.folio-heading-tools, .folio-table-tools, .folio-image-expand-btn, .folio-data-expand-btn, .folio-link-gallery, .folio-restructure-only, .folio-hash-short, .folio-color-swatch, .folio-alert-syntax, .code-block-header, .katex-mathml, script, style')) {
                     return NodeFilter.FILTER_REJECT;
                 }
                 return (node.nodeValue ?? '').toLowerCase().includes(lowerQuery)
@@ -586,6 +617,7 @@ export class FindInPage {
         }
         this._currentIndex = index;
         const cur = this._matches[index];
+        expandCollapsedAncestors(cur, onLinkLayoutChanged);
         cur.classList.add('is-current');
         cur.scrollIntoView({ behavior: 'smooth', block: 'center' });
         if (this._countEl) {
@@ -607,6 +639,14 @@ interface LightboxItem {
     title: string;
 }
 
+interface TextPreviewData {
+    fileName: string;
+    ext: string;
+    content: string;
+    truncated: boolean;
+    totalBytes: number;
+}
+
 let latestLinkVscode: any = null;
 let linkDelegationBound = false;
 let linkDownX = 0;
@@ -617,6 +657,9 @@ const perLinkExpandOverrides = new Map<string, boolean>();
 const resolvedDataUriCache = new Map<string, string | null>();
 const pendingDataUriRequests = new Map<string, (dataUri: string | null) => void>();
 let imageResolveSeq = 0;
+const resolvedTextPreviewCache = new Map<string, TextPreviewData | null>();
+const pendingTextPreviewRequests = new Map<string, (preview: TextPreviewData | null) => void>();
+let textResolveSeq = 0;
 
 function stripQueryAndHash(raw: string): string {
     return raw.split('#')[0].split('?')[0];
@@ -697,17 +740,54 @@ export function handleResolvedImageDataUri(payload: { requestId?: string; dataUr
     callback(payload.dataUri ?? null);
 }
 
+function requestTextPreview(rawHref: string): Promise<TextPreviewData | null> {
+    if (resolvedTextPreviewCache.has(rawHref)) {
+        return Promise.resolve(resolvedTextPreviewCache.get(rawHref) ?? null);
+    }
+    if (!latestLinkVscode) {
+        return Promise.resolve(null);
+    }
+
+    const requestId = `txt-${++textResolveSeq}`;
+    return new Promise(resolve => {
+        const timer = window.setTimeout(() => {
+            if (pendingTextPreviewRequests.has(requestId)) {
+                pendingTextPreviewRequests.delete(requestId);
+                resolve(null);
+            }
+        }, 8000);
+        pendingTextPreviewRequests.set(requestId, (preview: TextPreviewData | null) => {
+            window.clearTimeout(timer);
+            resolvedTextPreviewCache.set(rawHref, preview);
+            resolve(preview);
+        });
+        latestLinkVscode.postMessage({
+            type: 'resolve-text-preview',
+            payload: { requestId, path: rawHref }
+        });
+    });
+}
+
+export function handleResolvedTextPreview(payload: { requestId?: string; preview?: TextPreviewData | null }): void {
+    const requestId = payload?.requestId;
+    if (!requestId) { return; }
+    const callback = pendingTextPreviewRequests.get(requestId);
+    if (!callback) { return; }
+    pendingTextPreviewRequests.delete(requestId);
+    callback(payload.preview ?? null);
+}
+
 export function setExpandImageLinksEnabled(enabled: boolean, clearOverrides = true): void {
     globalExpandImageLinks = enabled;
     if (clearOverrides) {
         perLinkExpandOverrides.clear();
     }
-    const anchors = document.querySelectorAll<HTMLAnchorElement>('#document-content a.folio-image-link');
+    const anchors = document.querySelectorAll<HTMLElement>('#document-content .folio-image-link');
     anchors.forEach(anchor => syncSingleImageLinkExpansion(anchor));
     onLinkLayoutChanged?.();
 }
 
-function findBlockForImageLink(anchor: HTMLAnchorElement): HTMLElement | null {
+function findBlockForImageLink(anchor: HTMLElement): HTMLElement | null {
     return anchor.closest<HTMLElement>('li, p, td, th, blockquote') ?? anchor.parentElement;
 }
 
@@ -734,7 +814,7 @@ function removeCardAndPruneGallery(block: HTMLElement, cardKey: string): void {
     }
 }
 
-function syncSingleImageLinkExpansion(anchor: HTMLAnchorElement): void {
+function syncSingleImageLinkExpansion(anchor: HTMLElement): void {
     const key = anchor.dataset.folioLinkKey ?? '';
     const rawHref = anchor.dataset.folioRawHref ?? '';
     if (!key || !rawHref) { return; }
@@ -836,6 +916,99 @@ function syncSingleImageLinkExpansion(anchor: HTMLAnchorElement): void {
             return;
         }
         img.src = src;
+    });
+}
+
+function toggleInlineDataCard(triggerEl: HTMLElement, btn: HTMLElement): void {
+    const rawHref = triggerEl.dataset.folioRawHref ?? '';
+    const cardKey = triggerEl.dataset.folioDataKey ?? '';
+    if (!rawHref || !cardKey) { return; }
+
+    const block = findBlockForImageLink(triggerEl);
+    if (!block) { return; }
+
+    const gallery = Array.from(block.children).find(el => el.classList.contains('folio-link-gallery')) as HTMLElement | undefined;
+    const existing = gallery
+        ? (Array.from(gallery.children).find(el => (el as HTMLElement).dataset.folioCardKey === cardKey) as HTMLElement | undefined)
+        : undefined;
+
+    if (existing) {
+        removeCardAndPruneGallery(block, cardKey);
+        btn.classList.remove('is-expanded');
+        btn.setAttribute('aria-expanded', 'false');
+        onLinkLayoutChanged?.();
+        return;
+    }
+
+    const activeGallery = ensureGalleryContainer(block);
+    btn.classList.add('is-expanded');
+    btn.setAttribute('aria-expanded', 'true');
+
+    const basename = getLinkBasename(rawHref);
+    const labelText = (triggerEl.textContent ?? '').trim();
+    const displayTitle = labelText && labelText !== basename ? `${labelText} · ${basename}` : basename;
+
+    const card = document.createElement('span');
+    card.className = 'folio-inline-data-card is-loading';
+    card.dataset.folioCardKey = cardKey;
+    card.dataset.folioRawHref = rawHref;
+
+    const head = document.createElement('span');
+    head.className = 'folio-inline-card-head';
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'folio-inline-card-title';
+    titleSpan.textContent = displayTitle;
+    titleSpan.title = safeDecodeHref(rawHref);
+
+    const actions = document.createElement('span');
+    actions.className = 'folio-inline-card-actions';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'folio-card-btn folio-card-data-copy';
+    copyBtn.textContent = '复制';
+    copyBtn.title = '复制预览内容';
+
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.className = 'folio-card-btn folio-card-open';
+    openBtn.textContent = '打开';
+    openBtn.title = '在编辑器中打开原文件';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'folio-card-btn folio-card-data-close';
+    closeBtn.textContent = '✕';
+    closeBtn.title = '收起内容预览';
+
+    actions.append(copyBtn, openBtn, closeBtn);
+    head.append(titleSpan, actions);
+
+    const pre = document.createElement('pre');
+    pre.className = 'folio-inline-data-pre';
+    pre.textContent = '正在加载文件内容…';
+
+    card.append(head, pre);
+    activeGallery.appendChild(card);
+    onLinkLayoutChanged?.();
+
+    void requestTextPreview(rawHref).then(preview => {
+        if (!card.isConnected) { return; }
+        card.classList.remove('is-loading');
+        if (!preview) {
+            card.classList.add('is-error');
+            pre.textContent = `无法加载文件预览：${basename}`;
+            onLinkLayoutChanged?.();
+            return;
+        }
+        card.dataset.previewContent = preview.content;
+        const sizeLabel = preview.totalBytes >= 1024
+            ? `${(preview.totalBytes / 1024).toFixed(1)} KB`
+            : `${preview.totalBytes} B`;
+        titleSpan.textContent = `${displayTitle} (${sizeLabel}${preview.truncated ? ' · 已截断' : ''})`;
+        pre.textContent = preview.content;
+        onLinkLayoutChanged?.();
     });
 }
 
@@ -1096,13 +1269,13 @@ function collectLightboxItems(): LightboxItem[] {
 
     const items: LightboxItem[] = [];
     const seenImg = new WeakSet<HTMLImageElement>();
-    const nodes = root.querySelectorAll<HTMLElement>('a.folio-image-link, img:not(.folio-inline-thumb)');
+    const nodes = root.querySelectorAll<HTMLElement>('a.folio-image-link, code.folio-image-link, span.folio-image-link, img:not(.folio-inline-thumb)');
 
     nodes.forEach((node, idx) => {
         if (node.closest('.katex, .folio-heading-tools, .folio-table-tools, .folio-link-gallery')) {
             return;
         }
-        if (node instanceof HTMLAnchorElement) {
+        if (node.classList.contains('folio-image-link')) {
             const innerImg = node.querySelector('img');
             if (innerImg) {
                 seenImg.add(innerImg);
@@ -1158,7 +1331,7 @@ function ensureLinkDelegation(): void {
         if (expandBtn) {
             event.preventDefault();
             event.stopPropagation();
-            const anchor = expandBtn.previousElementSibling as HTMLAnchorElement | null;
+            const anchor = expandBtn.previousElementSibling as HTMLElement | null;
             if (anchor?.classList.contains('folio-image-link')) {
                 const key = anchor.dataset.folioLinkKey ?? '';
                 if (key) {
@@ -1166,6 +1339,65 @@ function ensureLinkDelegation(): void {
                     syncSingleImageLinkExpansion(anchor);
                     onLinkLayoutChanged?.();
                 }
+            }
+            return;
+        }
+
+        const dataBtn = target.closest<HTMLElement>('.folio-data-expand-btn');
+        if (dataBtn) {
+            event.preventDefault();
+            event.stopPropagation();
+            let triggerEl = dataBtn.previousElementSibling as HTMLElement | null;
+            if (triggerEl && triggerEl.classList.contains('folio-image-expand-btn')) {
+                triggerEl = triggerEl.previousElementSibling as HTMLElement | null;
+            }
+            if (triggerEl?.dataset.folioDataKey) {
+                toggleInlineDataCard(triggerEl, dataBtn);
+            }
+            return;
+        }
+
+        const dataCard = target.closest<HTMLElement>('.folio-inline-data-card');
+        if (dataCard) {
+            const key = dataCard.dataset.folioCardKey ?? '';
+            const rawHref = dataCard.dataset.folioRawHref ?? '';
+            if (target.closest('.folio-card-data-close')) {
+                event.preventDefault();
+                event.stopPropagation();
+                if (key) {
+                    const trigger = contentEl.querySelector<HTMLElement>(`[data-folio-data-key="${CSS.escape(key)}"]`);
+                    const btn = trigger?.nextElementSibling as HTMLElement | null;
+                    btn?.classList.remove('is-expanded');
+                    btn?.setAttribute('aria-expanded', 'false');
+                    const block = dataCard.parentElement?.parentElement;
+                    dataCard.remove();
+                    if (block) {
+                        removeCardAndPruneGallery(block, key);
+                    }
+                    onLinkLayoutChanged?.();
+                }
+                return;
+            }
+            if (target.closest('.folio-card-data-copy')) {
+                event.preventDefault();
+                event.stopPropagation();
+                const content = dataCard.dataset.previewContent ?? dataCard.querySelector('.folio-inline-data-pre')?.textContent ?? '';
+                if (content) {
+                    void copyTextWithFallback(latestLinkVscode, content);
+                    showPreviewToast(`已复制证据内容：${getLinkBasename(rawHref)}`);
+                }
+                return;
+            }
+            if (target.closest('.folio-card-open')) {
+                event.preventDefault();
+                event.stopPropagation();
+                if (rawHref) {
+                    latestLinkVscode?.postMessage({
+                        type: 'open-workspace-file',
+                        payload: { path: safeDecodeHref(rawHref) }
+                    });
+                }
+                return;
             }
             return;
         }
@@ -1179,7 +1411,7 @@ function ensureLinkDelegation(): void {
                 event.stopPropagation();
                 if (key) {
                     perLinkExpandOverrides.set(key, false);
-                    const anchor = contentEl.querySelector<HTMLAnchorElement>(`a.folio-image-link[data-folio-link-key="${CSS.escape(key)}"]`);
+                    const anchor = contentEl.querySelector<HTMLElement>(`.folio-image-link[data-folio-link-key="${CSS.escape(key)}"]`);
                     if (anchor) {
                         syncSingleImageLinkExpansion(anchor);
                     } else {
@@ -1228,6 +1460,7 @@ function ensureLinkDelegation(): void {
                 event.preventDefault();
                 const targetId = safeDecodeHref(rawHref.slice(1));
                 const heading = document.getElementById(targetId);
+                expandCollapsedAncestors(heading, onLinkLayoutChanged);
                 heading?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 return;
             }
@@ -1259,6 +1492,45 @@ function ensureLinkDelegation(): void {
             return;
         }
 
+        const evidenceToken = target.closest<HTMLElement>('[data-folio-evidence-kind]');
+        if (evidenceToken && !evidenceToken.closest('.folio-heading-tools, .folio-table-tools, .folio-link-gallery')) {
+            const kind = evidenceToken.dataset.folioEvidenceKind;
+            const rawHref = evidenceToken.dataset.folioRawHref ?? '';
+            if (!rawHref) { return; }
+
+            if (kind === 'image') {
+                event.preventDefault();
+                event.stopPropagation();
+                if (event.altKey || event.metaKey || event.ctrlKey) {
+                    latestLinkVscode?.postMessage({
+                        type: 'open-workspace-file',
+                        payload: { path: safeDecodeHref(rawHref) }
+                    });
+                } else {
+                    const key = evidenceToken.dataset.folioLinkKey ?? '';
+                    imageLightbox.open(collectLightboxItems(), key);
+                }
+                return;
+            }
+
+            if (kind === 'data' && evidenceToken.classList.contains('folio-bare-file')) {
+                event.preventDefault();
+                event.stopPropagation();
+                if (event.altKey || event.metaKey || event.ctrlKey) {
+                    latestLinkVscode?.postMessage({
+                        type: 'open-workspace-file',
+                        payload: { path: safeDecodeHref(rawHref) }
+                    });
+                } else {
+                    const nextBtn = evidenceToken.nextElementSibling as HTMLElement | null;
+                    if (nextBtn?.classList.contains('folio-data-expand-btn')) {
+                        toggleInlineDataCard(evidenceToken, nextBtn);
+                    }
+                }
+                return;
+            }
+        }
+
         const img = target.closest<HTMLImageElement>('img:not(.folio-inline-thumb)');
         if (img && !img.closest('.katex, .folio-heading-tools, .folio-table-tools')) {
             const items = collectLightboxItems();
@@ -1272,7 +1544,26 @@ function ensureLinkDelegation(): void {
     });
 }
 
-export function enhanceLinksAndImages(vscode: any, onLayoutChanged?: () => void): void {
+function attachDataExpandButton(triggerEl: HTMLElement, rawHref: string, dataIndex: number): void {
+    triggerEl.dataset.folioRawHref = rawHref;
+    triggerEl.dataset.folioDataKey = `data-${rawHref}::${dataIndex}`;
+    let dataBtn = triggerEl.nextElementSibling as HTMLButtonElement | null;
+    if (!dataBtn || !dataBtn.classList.contains('folio-data-expand-btn')) {
+        dataBtn = document.createElement('button');
+        dataBtn.type = 'button';
+        dataBtn.className = 'folio-data-expand-btn';
+        dataBtn.textContent = '{}';
+        dataBtn.title = '原地预览文件内容';
+        dataBtn.setAttribute('aria-expanded', 'false');
+        triggerEl.insertAdjacentElement('afterend', dataBtn);
+    }
+}
+
+export function enhanceLinksAndImages(
+    vscode: any,
+    onLayoutChanged?: () => void,
+    smartEnhanceEnabled = true
+): void {
     latestLinkVscode = vscode;
     onLinkLayoutChanged = onLayoutChanged;
     ensureLinkDelegation();
@@ -1280,43 +1571,55 @@ export function enhanceLinksAndImages(vscode: any, onLayoutChanged?: () => void)
     const root = document.getElementById('document-content');
     if (!root) { return; }
 
-    // Clear stale inline galleries before re-enhancing current DOM
-    root.querySelectorAll('.folio-link-gallery').forEach(node => node.remove());
+    // Clear stale inline galleries & preview buttons before re-enhancing current DOM
+    root.querySelectorAll('.folio-link-gallery, .folio-data-expand-btn').forEach(node => node.remove());
 
     const occurrenceCounter = new Map<string, number>();
+    let dataSeq = 0;
+
+    const registerImageTrigger = (el: HTMLElement, rawHref: string, hasNestedImg: boolean) => {
+        const count = (occurrenceCounter.get(rawHref) ?? 0) + 1;
+        occurrenceCounter.set(rawHref, count);
+        const key = `${rawHref}::${count}`;
+
+        el.classList.add('folio-image-link');
+        el.dataset.folioRawHref = rawHref;
+        el.dataset.folioLinkKey = key;
+        if (!el.title) {
+            el.title = '点击预览大图（Alt/Cmd+点击在编辑器中打开）';
+        }
+
+        if (!hasNestedImg) {
+            let expandBtn = el.nextElementSibling as HTMLButtonElement | null;
+            if (!expandBtn || !expandBtn.classList.contains('folio-image-expand-btn')) {
+                expandBtn = document.createElement('button');
+                expandBtn.type = 'button';
+                expandBtn.className = 'folio-image-expand-btn';
+                expandBtn.innerHTML = EXPAND_ICON_SVG;
+                el.insertAdjacentElement('afterend', expandBtn);
+            }
+            syncSingleImageLinkExpansion(el);
+        }
+    };
+
     const anchors = root.querySelectorAll<HTMLAnchorElement>('a[href]');
     anchors.forEach(anchor => {
         if (anchor.closest('.folio-heading-tools, .folio-table-tools, .folio-link-gallery')) {
             return;
         }
         const rawHref = anchor.getAttribute('href')?.trim() ?? '';
-        if (!rawHref || rawHref.startsWith('#') || isExternalHref(rawHref)) {
+        if (!rawHref || rawHref.startsWith('#')) {
+            return;
+        }
+        if (isExternalHref(rawHref)) {
+            if (smartEnhanceEnabled && !anchor.querySelector('img')) {
+                anchor.classList.add('folio-ext-link');
+            }
             return;
         }
 
         if (isImageHref(rawHref)) {
-            const count = (occurrenceCounter.get(rawHref) ?? 0) + 1;
-            occurrenceCounter.set(rawHref, count);
-            const key = `${rawHref}::${count}`;
-
-            anchor.classList.add('folio-image-link');
-            anchor.dataset.folioRawHref = rawHref;
-            anchor.dataset.folioLinkKey = key;
-            if (!anchor.title) {
-                anchor.title = '点击预览大图（Alt/Cmd+点击在编辑器中打开）';
-            }
-
-            if (!anchor.querySelector('img')) {
-                let expandBtn = anchor.nextElementSibling as HTMLButtonElement | null;
-                if (!expandBtn || !expandBtn.classList.contains('folio-image-expand-btn')) {
-                    expandBtn = document.createElement('button');
-                    expandBtn.type = 'button';
-                    expandBtn.className = 'folio-image-expand-btn';
-                    expandBtn.innerHTML = EXPAND_ICON_SVG;
-                    anchor.insertAdjacentElement('afterend', expandBtn);
-                }
-                syncSingleImageLinkExpansion(anchor);
-            }
+            registerImageTrigger(anchor, rawHref, Boolean(anchor.querySelector('img')));
             return;
         }
 
@@ -1325,7 +1628,27 @@ export function enhanceLinksAndImages(vscode: any, onLayoutChanged?: () => void)
         if (!anchor.title) {
             anchor.title = `点击在编辑器中打开 ${safeDecodeHref(rawHref)}`;
         }
+        if (smartEnhanceEnabled && anchor.dataset.folioDataPreview === 'true') {
+            attachDataExpandButton(anchor, rawHref, ++dataSeq);
+        }
     });
+
+    if (smartEnhanceEnabled) {
+        root.querySelectorAll<HTMLElement>('[data-folio-evidence-kind]').forEach(el => {
+            if (el.closest('.folio-heading-tools, .folio-table-tools, .folio-link-gallery, a[href], pre')) {
+                return;
+            }
+            const kind = el.dataset.folioEvidenceKind;
+            const rawHref = el.dataset.folioRawHref ?? '';
+            if (!rawHref) { return; }
+
+            if (kind === 'image') {
+                registerImageTrigger(el, rawHref, false);
+            } else if (kind === 'data') {
+                attachDataExpandButton(el, rawHref, ++dataSeq);
+            }
+        });
+    }
 
     const imgs = root.querySelectorAll<HTMLImageElement>('img:not(.folio-inline-thumb)');
     imgs.forEach((img, idx) => {
