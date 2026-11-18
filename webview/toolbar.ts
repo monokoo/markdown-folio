@@ -87,7 +87,7 @@ export class Toolbar {
                 chip.replaceWith(document.createTextNode(chip.dataset.rawCode ?? chip.querySelector('.folio-hash-full')?.textContent ?? ''));
             });
             clone.querySelectorAll(
-                'mark.folio-find-mark, .folio-exec-summary-card, .folio-section-body, .folio-kv-key, .folio-status-pill, .folio-rgb-inline, .folio-bare-file, .folio-alert-syntax, code.folio-auto-code'
+                'mark.folio-find-mark, .folio-exec-summary-card, .folio-section-body, .folio-kv-key, .folio-status-pill, .folio-rgb-inline, .folio-bare-file, .folio-alert-syntax, .folio-prio-badge, code.folio-auto-code'
             ).forEach(node => {
                 const parent = node.parentNode;
                 if (!parent) return;
@@ -95,6 +95,23 @@ export class Toolbar {
                     parent.insertBefore(node.firstChild, node);
                 }
                 node.remove();
+            });
+            const syntheticStrongClasses = [
+                'folio-lead-strong',
+                'is-problem',
+                'is-solution',
+                'is-risk',
+                'folio-severity-tag',
+                'is-critical',
+                'is-high',
+                'is-medium',
+                'is-low',
+            ];
+            clone.querySelectorAll('strong').forEach(strong => {
+                strong.classList.remove(...syntheticStrongClasses);
+                if (strong.classList.length === 0) {
+                    strong.removeAttribute('class');
+                }
             });
             clone.normalize();
             return {

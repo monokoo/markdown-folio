@@ -150,8 +150,39 @@ function getCleanElementForCopy(el: Element): HTMLElement {
     return clone;
 }
 
+function listToMarkdown(listEl: Element, indent = ''): string {
+    const isOrdered = listEl.tagName === 'OL';
+    const startAttr = isOrdered ? parseInt(listEl.getAttribute('start') || '1', 10) : 1;
+    const startNum = Number.isFinite(startAttr) ? startAttr : 1;
+    const lines: string[] = [];
+
+    Array.from(listEl.children)
+        .filter(el => el.tagName === 'LI')
+        .forEach((li, idx) => {
+            const cleanLi = getCleanElementForCopy(li);
+            const childLists = Array.from(cleanLi.querySelectorAll(':scope > ul, :scope > ol'));
+            childLists.forEach(sub => sub.remove());
+
+            const itemText = (cleanLi.textContent ?? '').replace(/\s+/g, ' ').trim();
+            const marker = isOrdered ? `${startNum + idx}.` : '-';
+            lines.push(itemText ? `${indent}${marker} ${itemText}` : `${indent}${marker}`);
+
+            childLists.forEach(sub => {
+                const subMd = listToMarkdown(sub, indent + '  ');
+                if (subMd) {
+                    lines.push(subMd);
+                }
+            });
+        });
+
+    return lines.join('\n');
+}
+
 function appendSectionNodeMarkdown(node: Element, parts: string[], level: number): void {
     if (node.classList.contains('folio-section-fold-pill') || node.classList.contains('folio-restructure-only')) {
+        return;
+    }
+    if (node.tagName === 'HR') {
         return;
     }
     if (node.classList.contains('folio-section-body')) {
@@ -173,13 +204,9 @@ function appendSectionNodeMarkdown(node: Element, parts: string[], level: number
         return;
     }
     if (node.tagName === 'UL' || node.tagName === 'OL') {
-        const isOrdered = node.tagName === 'OL';
-        const items = Array.from(node.querySelectorAll(':scope > li')).map((li, i) => {
-            const cleanLi = getCleanElementForCopy(li);
-            return `${isOrdered ? `${i + 1}.` : '-'} ${(cleanLi.textContent ?? '').trim()}`;
-        });
-        if (items.length > 0) {
-            parts.push(items.join('\n'));
+        const md = listToMarkdown(node);
+        if (md) {
+            parts.push(md);
         }
         return;
     }
@@ -318,7 +345,7 @@ export function enhanceInlineCodes(vscode: any): void {
 }
 
 export function enhanceSectionsAndTables(vscode: any): void {
-    document.querySelectorAll<HTMLElement>('#document-content h2, #document-content h3').forEach(heading => {
+    document.querySelectorAll<HTMLElement>('#document-content h2, #document-content h3, #document-content h4').forEach(heading => {
         if (heading.dataset.secEnhanced === 'true') { return; }
         heading.dataset.secEnhanced = 'true';
 
@@ -1625,8 +1652,11 @@ export function enhanceLinksAndImages(
 
         anchor.classList.add('folio-file-link');
         anchor.dataset.folioRawHref = rawHref;
+        if (smartEnhanceEnabled && /#L\d+|:\d+(?::\d+)?$/i.test(rawHref)) {
+            anchor.classList.add('folio-code-ref-link');
+        }
         if (!anchor.title) {
-            anchor.title = `点击在编辑器中打开 ${safeDecodeHref(rawHref)}`;
+            anchor.title = `点击在编辑器中打开 ${safeDecodeHref(rawHref).replace(/^file:\/\//i, '')}`;
         }
         if (smartEnhanceEnabled && anchor.dataset.folioDataPreview === 'true') {
             attachDataExpandButton(anchor, rawHref, ++dataSeq);

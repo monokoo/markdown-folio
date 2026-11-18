@@ -17,6 +17,12 @@ const DEFECT_STRONG_RE = /(?:没有标红|未标红|未通过|失败|缺陷|颠�
 const AUTO_FOLD_HEADING_RE = /(?:非业务问题|临时配置恢复|配置恢复回执|历史变更记录|^附录)/;
 const ROW_KV_PAIR_RE = /\b([A-Za-z0-9_-]{1,12})=([A-Za-z0-9_-]{2,24})\b/g;
 
+const LEAD_STRONG_PROBLEM_RE = /^(?:实证问题|问题现象|问题描述|根因|根因定位|阻塞原因|缺陷表现)$/;
+const LEAD_STRONG_SOLUTION_RE = /^(?:核心方案|推荐方案|修复方案|收敛方向|解决方案|落地顺序)$/;
+const LEAD_STRONG_RISK_RE = /^(?:.*风险|上游风险|注意事项|回滚方案|取舍分析)$/;
+const HEADING_PRIO_RE = /^(\s*)(【(P[0-3])(?:-[A-Za-z0-9]+)?】|\[(P[0-3])(?:-[A-Za-z0-9]+)?\])/;
+const SEVERITY_STRONG_RE = /^(CRITICAL|HIGH|MEDIUM|LOW)$/;
+
 const GFM_ALERT_RE = /^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\](?:[ \t]+([^\n]*))?(?:\n|$)/i;
 const STATUS_PASS_RE = /^(?:PASS(?:ED)?|SUCCESS|OK|通过|已通过|两轮通过[／/]已上传|已上线[，,]精确回绑已确认|已更新[，,]在线)$/i;
 const STATUS_FAIL_RE = /^(?:FAIL(?:ED|_[A-Z0-9_]+)?|ERROR|TIMEOUT|未通过|失败|依赖失败|未通过[／/]当前未上传|未上线[：:].+|.+失败[，,]修订未发布)$/i;
@@ -206,6 +212,59 @@ function wrapPrefixKeyInTextNode(textNode: Text, match: RegExpMatchArray): void 
     textNode.parentNode?.replaceChild(frag, textNode);
 }
 
+function markLeadStrongLabel(container: Element, hasFollowingList = false): void {
+    const firstChild = container.firstChild;
+    let strongEl: HTMLElement | null = null;
+    if (firstChild instanceof HTMLElement && firstChild.tagName === 'STRONG') {
+        strongEl = firstChild;
+    } else if (
+        firstChild?.nodeType === Node.TEXT_NODE
+        && !(firstChild.nodeValue ?? '').trim()
+        && firstChild.nextSibling instanceof HTMLElement
+        && firstChild.nextSibling.tagName === 'STRONG'
+    ) {
+        strongEl = firstChild.nextSibling;
+    }
+    if (!strongEl) { return; }
+    if (strongEl.querySelector('p, div, ul, ol, li, table, pre, blockquote, h1, h2, h3, h4, h5, h6, hr')) {
+        return;
+    }
+
+    const strongText = (strongEl.textContent ?? '').trim();
+    if (
+        strongText.length < 2
+        || strongText.length > 24
+        || strongText.includes('\n')
+        || CLOCK_OR_URL_RE.test(strongText)
+    ) {
+        return;
+    }
+
+    const colonInside = strongText.endsWith('：') || strongText.endsWith(':');
+    const nextSiblingVal = strongEl.nextSibling?.nodeType === Node.TEXT_NODE
+        ? (strongEl.nextSibling.nodeValue ?? '')
+        : '';
+    const colonOutside = !colonInside && /^(?:：|:\s)/.test(nextSiblingVal);
+    if (!colonInside && !colonOutside) { return; }
+
+    const containerText = (container.textContent ?? '').trim();
+    const hasListAfter = hasFollowingList || Boolean(container.querySelector('ul, ol'));
+    const minLenWithContent = colonInside ? strongText.length : strongText.length + 1;
+    if (containerText.length <= minLenWithContent && !hasListAfter) {
+        return;
+    }
+
+    strongEl.classList.add('folio-lead-strong');
+    const keyLabel = strongText.replace(/[：:]$/, '').trim();
+    if (LEAD_STRONG_PROBLEM_RE.test(keyLabel)) {
+        strongEl.classList.add('is-problem');
+    } else if (LEAD_STRONG_SOLUTION_RE.test(keyLabel)) {
+        strongEl.classList.add('is-solution');
+    } else if (LEAD_STRONG_RISK_RE.test(keyLabel)) {
+        strongEl.classList.add('is-risk');
+    }
+}
+
 function applyParagraphAndListStructure(root: HTMLElement): void {
     // Lead subheadings: short paragraph ending with colon immediately preceding list/table
     root.querySelectorAll<HTMLParagraphElement>('p').forEach(p => {
@@ -228,6 +287,12 @@ function applyParagraphAndListStructure(root: HTMLElement): void {
     // Multi-line Key: Value paragraph splitting + lead key highlight
     root.querySelectorAll<HTMLParagraphElement>('p').forEach(p => {
         if (p.classList.contains('folio-lead-subheading') || p.closest('.folio-gfm-alert')) { return; }
+
+        if (!p.closest('.folio-exec-summary-card')) {
+            const next = p.nextElementSibling;
+            const followsList = Boolean(next && (next.tagName === 'UL' || next.tagName === 'OL'));
+            markLeadStrongLabel(p, followsList);
+        }
 
         const directTextNodes = Array.from(p.childNodes).filter(
             (n): n is Text => n.nodeType === Node.TEXT_NODE
@@ -282,10 +347,12 @@ function applyParagraphAndListStructure(root: HTMLElement): void {
 
     // List item leading Key: highlight
     root.querySelectorAll<HTMLLIElement>('li').forEach(li => {
+        const firstContainer = li.firstElementChild?.tagName === 'P' ? li.firstElementChild : li;
+        markLeadStrongLabel(firstContainer, Boolean(li.querySelector('ul, ol')));
+
         const firstText = getFirstSignificantTextNode(li);
         if (!firstText) { return; }
         // Only highlight when text is actually at the beginning of this li (or its inner first <p>)
-        const firstContainer = li.firstElementChild?.tagName === 'P' ? li.firstElementChild : li;
         if (firstContainer.firstChild !== firstText) { return; }
 
         const m = (firstText.nodeValue ?? '').match(LI_LEAD_KEY_RE);
@@ -397,32 +464,55 @@ function setSectionCollapsed(
     pill.style.display = collapsed ? '' : 'none';
 }
 
-function applyCollapsibleSections(root: HTMLElement, onLayoutChanged?: () => void): void {
-    const h2List = Array.from(root.children).filter(
-        (el): el is HTMLHeadingElement => el.tagName === 'H2'
+function wrapCollapsibleHeadingGroup(
+    container: HTMLElement,
+    tagName: 'H2' | 'H3' | 'H4',
+    minCount: number,
+    allowAutoFold: boolean,
+    onLayoutChanged?: () => void
+): HTMLElement[] {
+    const headings = Array.from(container.children).filter(
+        (el): el is HTMLHeadingElement => el.tagName === tagName
     );
-    if (h2List.length === 0) { return; }
+    if (headings.length < minCount) { return []; }
 
-    const allowAutoFold = h2List.length >= 4;
+    const targetLevel = Number(tagName.slice(1));
+    const createdBodies: HTMLElement[] = [];
 
-    h2List.forEach(h2 => {
-        const body = document.createElement('div');
-        body.className = 'folio-section-body';
-
+    headings.forEach(heading => {
         const siblingsToWrap: Node[] = [];
-        let cursor = h2.nextSibling;
+        let cursor = heading.nextSibling;
         while (cursor) {
             if (cursor.nodeType === Node.ELEMENT_NODE) {
                 const tag = (cursor as Element).tagName;
-                if (tag === 'H1' || tag === 'H2') { break; }
+                if (/^H[1-6]$/.test(tag) && Number(tag.slice(1)) <= targetLevel) {
+                    break;
+                }
             }
             siblingsToWrap.push(cursor);
             cursor = cursor.nextSibling;
         }
+
+        while (siblingsToWrap.length > 0) {
+            const last = siblingsToWrap[siblingsToWrap.length - 1];
+            if (last.nodeType === Node.TEXT_NODE && !(last.nodeValue ?? '').trim()) {
+                siblingsToWrap.pop();
+                continue;
+            }
+            if (last.nodeType === Node.ELEMENT_NODE && (last as Element).tagName === 'HR') {
+                siblingsToWrap.pop();
+                continue;
+            }
+            break;
+        }
+
         if (siblingsToWrap.length === 0) { return; }
 
-        h2.insertAdjacentElement('afterend', body);
+        const body = document.createElement('div');
+        body.className = 'folio-section-body';
+        heading.insertAdjacentElement('afterend', body);
         siblingsToWrap.forEach(node => body.appendChild(node));
+        createdBodies.push(body);
 
         const foldBtn = document.createElement('button');
         foldBtn.type = 'button';
@@ -430,7 +520,7 @@ function applyCollapsibleSections(root: HTMLElement, onLayoutChanged?: () => voi
         foldBtn.textContent = '▾';
         foldBtn.title = '折叠 / 展开此章节';
         foldBtn.setAttribute('aria-expanded', 'true');
-        h2.insertBefore(foldBtn, h2.firstChild);
+        heading.insertBefore(foldBtn, heading.firstChild);
 
         const itemCount = body.querySelectorAll('li, p, tr').length || body.children.length;
         const pill = document.createElement('button');
@@ -438,11 +528,11 @@ function applyCollapsibleSections(root: HTMLElement, onLayoutChanged?: () => voi
         pill.className = 'folio-section-fold-pill folio-restructure-only';
         pill.textContent = `已收起 ${itemCount} 条明细 · 点击展开查看`;
         pill.style.display = 'none';
-        h2.insertAdjacentElement('afterend', pill);
+        heading.insertAdjacentElement('afterend', pill);
 
         const toggle = () => {
             const nextCollapsed = !body.classList.contains('is-collapsed');
-            setSectionCollapsed(h2, body, pill, nextCollapsed);
+            setSectionCollapsed(heading, body, pill, nextCollapsed);
             onLayoutChanged?.();
         };
 
@@ -454,15 +544,40 @@ function applyCollapsibleSections(root: HTMLElement, onLayoutChanged?: () => voi
         pill.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
-            setSectionCollapsed(h2, body, pill, false);
+            setSectionCollapsed(heading, body, pill, false);
             onLayoutChanged?.();
         });
 
-        const headingTitle = (h2.textContent ?? '').replace(/^[▾▸]\s*/, '').trim();
+        const headingTitle = (heading.textContent ?? '').replace(/^[▾▸]\s*/, '').trim();
         if (allowAutoFold && AUTO_FOLD_HEADING_RE.test(headingTitle)) {
-            setSectionCollapsed(h2, body, pill, true);
+            setSectionCollapsed(heading, body, pill, true);
         }
     });
+
+    return createdBodies;
+}
+
+function applyCollapsibleSections(root: HTMLElement, onLayoutChanged?: () => void): void {
+    const directChildren = Array.from(root.children);
+    const h2Count = directChildren.filter(el => el.tagName === 'H2').length;
+    if (h2Count >= 1) {
+        wrapCollapsibleHeadingGroup(root, 'H2', 1, h2Count >= 4, onLayoutChanged);
+        return;
+    }
+
+    const h3Count = directChildren.filter(el => el.tagName === 'H3').length;
+    if (h3Count >= 2) {
+        const h3Bodies = wrapCollapsibleHeadingGroup(root, 'H3', 2, h3Count >= 4, onLayoutChanged);
+        h3Bodies.forEach(body => {
+            wrapCollapsibleHeadingGroup(body, 'H4', 4, false, onLayoutChanged);
+        });
+        return;
+    }
+
+    const h4Count = directChildren.filter(el => el.tagName === 'H4').length;
+    if (h4Count >= 2) {
+        wrapCollapsibleHeadingGroup(root, 'H4', 2, false, onLayoutChanged);
+    }
 }
 
 export function expandCollapsedAncestors(target: Element | null, onLayoutChanged?: () => void): boolean {
@@ -721,8 +836,62 @@ function applyColorSwatchesAndBareTokens(root: HTMLElement): void {
     }
 }
 
+function applyPriorityAndSeverityBadges(root: HTMLElement): void {
+    root.querySelectorAll<HTMLElement>('h2, h3, h4').forEach(heading => {
+        const firstText = getFirstSignificantTextNode(heading);
+        if (!firstText || firstText.parentElement !== heading) { return; }
+
+        let prev = firstText.previousSibling;
+        while (prev) {
+            if (prev.nodeType === Node.TEXT_NODE && !(prev.nodeValue ?? '').trim()) {
+                prev = prev.previousSibling;
+                continue;
+            }
+            if (prev instanceof HTMLElement && prev.classList.contains('folio-section-fold-btn')) {
+                prev = prev.previousSibling;
+                continue;
+            }
+            return;
+        }
+
+        const val = firstText.nodeValue ?? '';
+        const match = val.match(HEADING_PRIO_RE);
+        if (!match) { return; }
+
+        const leading = match[1] ?? '';
+        const badgeText = match[2];
+        const prio = (match[3] ?? match[4] ?? '').toLowerCase();
+        if (!badgeText || !prio) { return; }
+
+        const frag = document.createDocumentFragment();
+        if (leading) {
+            frag.appendChild(document.createTextNode(leading));
+        }
+        const span = document.createElement('span');
+        span.className = `folio-prio-badge is-${prio}`;
+        span.textContent = badgeText;
+        frag.appendChild(span);
+
+        const rest = val.slice(match[0].length);
+        if (rest) {
+            frag.appendChild(document.createTextNode(rest));
+        }
+        firstText.parentNode?.replaceChild(frag, firstText);
+    });
+
+    root.querySelectorAll<HTMLElement>('strong').forEach(strong => {
+        if (strong.closest('h1, h2, h3, h4, h5, h6, a, pre, code, th, .folio-restructure-only, .folio-heading-tools, .folio-table-tools, .katex')) {
+            return;
+        }
+        const raw = (strong.textContent ?? '').trim();
+        if (!SEVERITY_STRONG_RE.test(raw)) { return; }
+        strong.classList.add('folio-severity-tag', `is-${raw.toLowerCase()}`);
+    });
+}
+
 export function applySmartEnhancements(root: HTMLElement): void {
     applyGfmAlerts(root);
     applyTableStatusPills(root);
     applyColorSwatchesAndBareTokens(root);
+    applyPriorityAndSeverityBadges(root);
 }
