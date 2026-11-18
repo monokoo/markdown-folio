@@ -499,11 +499,20 @@ body.zen-mode #document-content code:not(pre code) {
     border-radius: 4px !important;
     color: #24292f !important;
     font-family: var(--font-mono) !important;
-    font-size: 0.8rem !important;
+    font-size: 0.86em !important;
     font-weight: 450 !important;
     font-synthesis: none !important;
     line-height: 1.5 !important;
     white-space: pre-wrap !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+}
+
+body.zen-mode #document-content th.table-cell-nowrap code,
+body.zen-mode #document-content td.table-cell-nowrap code {
+    white-space: nowrap !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
 }
 
 body.zen-mode #document-content code:not(pre code).folio-path-code {

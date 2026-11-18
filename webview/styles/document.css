@@ -91,12 +91,38 @@ body.is-zoomed #document-paper {
     line-height: var(--line-height-body);
 }
 
+#document-content p,
+#document-content li {
+    overflow-wrap: break-word;
+}
+
 #document-content p {
     margin: var(--paragraph-spacing, 1.05em) 0;
 }
 
+#document-content ul,
+#document-content ol {
+    padding-left: 1.55em;
+    margin: 0.45em 0;
+}
+
+#document-content li > ul,
+#document-content li > ol {
+    padding-left: 1.35em;
+    margin: 0.24em 0 0.32em;
+}
+
 #document-content li {
     margin-bottom: var(--list-item-spacing, 0.28em);
+}
+
+#document-content h1,
+#document-content h2,
+#document-content h3,
+#document-content h4,
+#document-content h5,
+#document-content h6 {
+    overflow-wrap: break-word;
 }
 
 #document-content h1 {
@@ -156,6 +182,7 @@ body.is-zoomed #document-paper {
 
 #document-content a {
     color: var(--accent-color);
+    overflow-wrap: break-word;
 }
 
 #document-content blockquote {
@@ -165,6 +192,7 @@ body.is-zoomed #document-paper {
     color: var(--text-muted);
     background: var(--quote-bg);
     border-radius: 0 6px 6px 0;
+    overflow-wrap: break-word;
 }
 
 #document-content pre {
@@ -261,6 +289,17 @@ body.is-zoomed #document-paper {
 
 #document-content code {
     font-family: var(--font-mono);
+}
+
+#document-content code:not(pre code) {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    padding: 0.1em 0.36em;
+    border-radius: 4px;
+    background: var(--code-bg);
+    border: 1px solid color-mix(in oklab, var(--border-color) 70%, transparent);
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 #document-content img {
@@ -379,8 +418,12 @@ body.page-width-full #document-container:not(.toolbar-collapsed) #document-paper
 #document-content th.table-cell-nowrap,
 #document-content td.table-cell-nowrap,
 #document-content th.table-cell-nowrap code,
-#document-content td.table-cell-nowrap code {
+#document-content td.table-cell-nowrap code,
+body.zen-mode #document-content th.table-cell-nowrap code,
+body.zen-mode #document-content td.table-cell-nowrap code {
     white-space: nowrap !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
 }
 
 #document-content th.table-cell-wrap,
@@ -421,8 +464,12 @@ body.page-width-full #document-container:not(.toolbar-collapsed) #document-paper
     #document-content th.table-cell-nowrap,
     #document-content td.table-cell-nowrap,
     #document-content th.table-cell-nowrap code,
-    #document-content td.table-cell-nowrap code {
+    #document-content td.table-cell-nowrap code,
+    body.zen-mode #document-content th.table-cell-nowrap code,
+    body.zen-mode #document-content td.table-cell-nowrap code {
         white-space: normal !important;
+        overflow-wrap: anywhere !important;
+        word-break: break-word !important;
     }
 
     #document-content th.table-cell-wrap,
@@ -463,8 +510,12 @@ body.export-png-capture #document-content .table-wrapper {
 body.export-png-capture #document-content th.table-cell-nowrap,
 body.export-png-capture #document-content td.table-cell-nowrap,
 body.export-png-capture #document-content th.table-cell-nowrap code,
-body.export-png-capture #document-content td.table-cell-nowrap code {
+body.export-png-capture #document-content td.table-cell-nowrap code,
+body.zen-mode.export-png-capture #document-content th.table-cell-nowrap code,
+body.zen-mode.export-png-capture #document-content td.table-cell-nowrap code {
     white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
 }
 
 body.export-png-capture #document-content th.table-cell-wrap,
@@ -524,7 +575,8 @@ body.inline-code-copy-enabled #document-content code.folio-copyable-code:hover {
 }
 
 #document-content h2,
-#document-content h3 {
+#document-content h3,
+#document-content h4 {
     position: relative;
 }
 
@@ -539,7 +591,8 @@ body.inline-code-copy-enabled #document-content code.folio-copyable-code:hover {
 }
 
 #document-content h2:hover .folio-heading-tools,
-#document-content h3:hover .folio-heading-tools {
+#document-content h3:hover .folio-heading-tools,
+#document-content h4:hover .folio-heading-tools {
     display: inline-flex;
 }
 
@@ -599,6 +652,40 @@ mark.folio-find-mark.is-current {
 #document-content a.folio-file-link {
     text-decoration-thickness: 1px;
     text-underline-offset: 3px;
+}
+
+#document-content a.folio-code-ref-link,
+body.zen-mode #document-content a.folio-code-ref-link {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    font-weight: 500 !important;
+    padding: 0.06em 0.36em;
+    border-radius: 4px;
+    background: color-mix(in oklab, var(--accent-color) 9%, var(--code-bg));
+    border: 1px solid color-mix(in oklab, var(--accent-color) 25%, transparent);
+    text-decoration: none !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    transition: background-color 0.14s ease, border-color 0.14s ease;
+}
+
+#document-content a.folio-code-ref-link:hover,
+body.zen-mode #document-content a.folio-code-ref-link:hover {
+    background: color-mix(in oklab, var(--accent-color) 16%, var(--code-bg));
+    border-color: color-mix(in oklab, var(--accent-color) 48%, transparent);
+    text-decoration: underline !important;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+}
+
+#document-content a.folio-code-ref-link code,
+body.zen-mode #document-content a.folio-code-ref-link code {
+    font-size: 1em !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    color: inherit !important;
 }
 
 #document-content a.folio-image-link.is-expanded {
@@ -994,6 +1081,59 @@ body.zen-mode #document-content p.folio-lead-subheading {
     color: var(--heading-color, var(--text-primary));
 }
 
+body.folio-smart-restructure #document-content strong.folio-lead-strong {
+    color: var(--heading-color, var(--text-primary));
+    font-weight: 700;
+}
+
+body.folio-smart-restructure #document-content strong.folio-lead-strong.is-problem {
+    color: #be123c;
+    background: color-mix(in oklab, #f43f5e 9%, transparent);
+    padding: 1px 6px;
+    border-radius: 4px;
+    border-left: 2.5px solid #e11d48;
+}
+
+body.folio-smart-restructure #document-content strong.folio-lead-strong.is-solution {
+    color: #15803d;
+    background: color-mix(in oklab, #22c55e 10%, transparent);
+    padding: 1px 6px;
+    border-radius: 4px;
+    border-left: 2.5px solid #16a34a;
+}
+
+body.folio-smart-restructure #document-content strong.folio-lead-strong.is-risk {
+    color: #b45309;
+    background: color-mix(in oklab, #f59e0b 11%, transparent);
+    padding: 1px 6px;
+    border-radius: 4px;
+    border-left: 2.5px solid #d97706;
+}
+
+body.admiral-mode.folio-smart-restructure #document-content strong.folio-lead-strong.is-problem,
+body.cyberpunk-mode.folio-smart-restructure #document-content strong.folio-lead-strong.is-problem,
+body.dracula-mode.folio-smart-restructure #document-content strong.folio-lead-strong.is-problem {
+    color: #fda4af;
+    background: color-mix(in oklab, #fb7185 14%, transparent);
+    border-left-color: #fb7185;
+}
+
+body.admiral-mode.folio-smart-restructure #document-content strong.folio-lead-strong.is-solution,
+body.cyberpunk-mode.folio-smart-restructure #document-content strong.folio-lead-strong.is-solution,
+body.dracula-mode.folio-smart-restructure #document-content strong.folio-lead-strong.is-solution {
+    color: #86efac;
+    background: color-mix(in oklab, #4ade80 14%, transparent);
+    border-left-color: #4ade80;
+}
+
+body.admiral-mode.folio-smart-restructure #document-content strong.folio-lead-strong.is-risk,
+body.cyberpunk-mode.folio-smart-restructure #document-content strong.folio-lead-strong.is-risk,
+body.dracula-mode.folio-smart-restructure #document-content strong.folio-lead-strong.is-risk {
+    color: #fcd34d;
+    background: color-mix(in oklab, #fbbf24 14%, transparent);
+    border-left-color: #fbbf24;
+}
+
 .folio-auto-callout.is-warning {
     margin: 0.9em 0;
     padding: 10px 14px;
@@ -1030,6 +1170,15 @@ body.zen-mode #document-content p.folio-lead-subheading {
     cursor: pointer;
     vertical-align: middle;
     transition: background-color 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+
+#document-content h3 .folio-section-fold-btn,
+#document-content h4 .folio-section-fold-btn {
+    width: 18px;
+    height: 18px;
+    margin-right: 5px;
+    font-size: 11px;
+    vertical-align: -2px;
 }
 
 .folio-section-fold-btn:hover {
@@ -1311,4 +1460,143 @@ body.zen-mode #document-content pre.folio-inline-data-pre {
 
 .folio-inline-data-card.is-error .folio-inline-data-pre {
     color: #dc2626;
+}
+
+#document-content .folio-prio-badge {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.78em;
+    font-weight: 700;
+    line-height: 1.35;
+    padding: 1px 6px;
+    border-radius: 5px;
+    margin-right: 6px;
+    vertical-align: 1px;
+    letter-spacing: 0.02em;
+    border: 1px solid transparent;
+}
+
+#document-content .folio-prio-badge.is-p0 {
+    color: #be123c;
+    background: color-mix(in oklab, #f43f5e 12%, transparent);
+    border-color: color-mix(in oklab, #e11d48 34%, transparent);
+}
+
+#document-content .folio-prio-badge.is-p1 {
+    color: #b45309;
+    background: color-mix(in oklab, #f59e0b 14%, transparent);
+    border-color: color-mix(in oklab, #d97706 36%, transparent);
+}
+
+#document-content .folio-prio-badge.is-p2 {
+    color: #1d4ed8;
+    background: color-mix(in oklab, #3b82f6 12%, transparent);
+    border-color: color-mix(in oklab, #2563eb 34%, transparent);
+}
+
+#document-content .folio-prio-badge.is-p3 {
+    color: #475569;
+    background: color-mix(in oklab, #64748b 11%, transparent);
+    border-color: color-mix(in oklab, #64748b 30%, transparent);
+}
+
+body.admiral-mode #document-content .folio-prio-badge.is-p0,
+body.cyberpunk-mode #document-content .folio-prio-badge.is-p0,
+body.dracula-mode #document-content .folio-prio-badge.is-p0 {
+    color: #fda4af;
+    background: color-mix(in oklab, #fb7185 16%, transparent);
+    border-color: color-mix(in oklab, #fb7185 40%, transparent);
+}
+
+body.admiral-mode #document-content .folio-prio-badge.is-p1,
+body.cyberpunk-mode #document-content .folio-prio-badge.is-p1,
+body.dracula-mode #document-content .folio-prio-badge.is-p1 {
+    color: #fcd34d;
+    background: color-mix(in oklab, #fbbf24 16%, transparent);
+    border-color: color-mix(in oklab, #fbbf24 40%, transparent);
+}
+
+body.admiral-mode #document-content .folio-prio-badge.is-p2,
+body.cyberpunk-mode #document-content .folio-prio-badge.is-p2,
+body.dracula-mode #document-content .folio-prio-badge.is-p2 {
+    color: #93c5fd;
+    background: color-mix(in oklab, #60a5fa 16%, transparent);
+    border-color: color-mix(in oklab, #60a5fa 40%, transparent);
+}
+
+body.admiral-mode #document-content .folio-prio-badge.is-p3,
+body.cyberpunk-mode #document-content .folio-prio-badge.is-p3,
+body.dracula-mode #document-content .folio-prio-badge.is-p3 {
+    color: #cbd5e1;
+    background: color-mix(in oklab, #94a3b8 16%, transparent);
+    border-color: color-mix(in oklab, #94a3b8 34%, transparent);
+}
+
+#document-content strong.folio-severity-tag {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.8em;
+    font-weight: 700;
+    line-height: 1.35;
+    padding: 1px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.02em;
+    border: 1px solid transparent;
+    vertical-align: 0.5px;
+}
+
+#document-content strong.folio-severity-tag.is-critical {
+    color: #be123c;
+    background: color-mix(in oklab, #f43f5e 12%, transparent);
+    border-color: color-mix(in oklab, #e11d48 34%, transparent);
+}
+
+#document-content strong.folio-severity-tag.is-high {
+    color: #c2410c;
+    background: color-mix(in oklab, #f97316 12%, transparent);
+    border-color: color-mix(in oklab, #ea580c 36%, transparent);
+}
+
+#document-content strong.folio-severity-tag.is-medium {
+    color: #1d4ed8;
+    background: color-mix(in oklab, #3b82f6 12%, transparent);
+    border-color: color-mix(in oklab, #2563eb 34%, transparent);
+}
+
+#document-content strong.folio-severity-tag.is-low {
+    color: #0f766e;
+    background: color-mix(in oklab, #14b8a6 12%, transparent);
+    border-color: color-mix(in oklab, #0f766e 32%, transparent);
+}
+
+body.admiral-mode #document-content strong.folio-severity-tag.is-critical,
+body.cyberpunk-mode #document-content strong.folio-severity-tag.is-critical,
+body.dracula-mode #document-content strong.folio-severity-tag.is-critical {
+    color: #fda4af;
+    background: color-mix(in oklab, #fb7185 16%, transparent);
+    border-color: color-mix(in oklab, #fb7185 40%, transparent);
+}
+
+body.admiral-mode #document-content strong.folio-severity-tag.is-high,
+body.cyberpunk-mode #document-content strong.folio-severity-tag.is-high,
+body.dracula-mode #document-content strong.folio-severity-tag.is-high {
+    color: #fdba74;
+    background: color-mix(in oklab, #fb923c 16%, transparent);
+    border-color: color-mix(in oklab, #fb923c 40%, transparent);
+}
+
+body.admiral-mode #document-content strong.folio-severity-tag.is-medium,
+body.cyberpunk-mode #document-content strong.folio-severity-tag.is-medium,
+body.dracula-mode #document-content strong.folio-severity-tag.is-medium {
+    color: #93c5fd;
+    background: color-mix(in oklab, #60a5fa 16%, transparent);
+    border-color: color-mix(in oklab, #60a5fa 40%, transparent);
+}
+
+body.admiral-mode #document-content strong.folio-severity-tag.is-low,
+body.cyberpunk-mode #document-content strong.folio-severity-tag.is-low,
+body.dracula-mode #document-content strong.folio-severity-tag.is-low {
+    color: #5eead4;
+    background: color-mix(in oklab, #2dd4bf 16%, transparent);
+    border-color: color-mix(in oklab, #2dd4bf 36%, transparent);
 }
