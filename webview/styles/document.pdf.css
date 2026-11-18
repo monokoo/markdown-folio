@@ -174,8 +174,7 @@ code {
 
 :not(pre) > code,
 code:not(pre code) {
-    overflow-wrap: anywhere;
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 pre code {

@@ -503,9 +503,8 @@ body.zen-mode #document-content code:not(pre code) {
     font-weight: 450 !important;
     font-synthesis: none !important;
     line-height: 1.5 !important;
-    white-space: pre-wrap !important;
-    overflow-wrap: anywhere !important;
-    word-break: break-word !important;
+    white-space: normal !important;
+    overflow-wrap: break-word !important;
 }
 
 body.zen-mode #document-content th.table-cell-nowrap code,
@@ -662,7 +661,7 @@ body.zen-mode #document-content th {
     color: #2c3e50 !important;
 }
 
-body.zen-mode #document-content li:has(> input[type="checkbox"]) {
+body.zen-mode #document-content li.task-list-item {
     list-style-type: none;
     margin-left: -1.5em;
 }

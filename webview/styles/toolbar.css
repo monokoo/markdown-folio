@@ -10,15 +10,9 @@
     padding: 7px 10px;
     border-radius: 14px;
     border: 1px solid var(--toolbar-border);
-    backdrop-filter: blur(8px);
     background: var(--toolbar-gradient, var(--toolbar-bg));
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
     transition: padding 0.18s ease, border-radius 0.18s ease, box-shadow 0.18s ease;
-}
-
-body.zen-mode #toolbar,
-body.light-mode #toolbar {
-    backdrop-filter: none;
 }
 
 body.light-mode #toolbar {

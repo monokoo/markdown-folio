@@ -118,7 +118,7 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    transition: all 0.16s ease;
+    transition: color 0.15s ease, background-color 0.15s ease, border-left-color 0.15s ease, opacity 0.15s ease;
 }
 
 .toc-item:not(.level-1) {
@@ -199,7 +199,7 @@
 
 .toc-item.active {
     color: var(--gold-color);
-    font-weight: 700;
+    text-shadow: 0 0 0.35px currentColor;
     background: var(--toc-item-active-bg);
     border-left-color: var(--gold-color);
     opacity: 1;
@@ -225,14 +225,8 @@
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
-    backdrop-filter: blur(8px);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
     transition: transform 0.15s ease, opacity 0.15s ease;
-}
-
-body.zen-mode .toc-drawer-fab,
-body.light-mode .toc-drawer-fab {
-    backdrop-filter: none;
 }
 
 .toc-drawer-fab.visible {

@@ -16,6 +16,10 @@
     display: flex;
     height: 100vh;
     overflow: hidden;
+    background:
+        radial-gradient(ellipse 100% 50% at 50% 0%, var(--app-bg-glow-1) 0%, transparent 65%),
+        radial-gradient(ellipse 80% 70% at 22% 100%, var(--app-bg-glow-2) 0%, transparent 60%),
+        var(--app-bg);
 }
 
 #document-container {
@@ -26,10 +30,7 @@
     justify-content: center;
     align-items: flex-start;
     transition: padding-top 0.18s ease;
-    background:
-        radial-gradient(ellipse 100% 50% at 50% 0%, var(--app-bg-glow-1) 0%, transparent 65%),
-        radial-gradient(ellipse 80% 70% at 22% 100%, var(--app-bg-glow-2) 0%, transparent 60%),
-        var(--app-bg);
+    background: transparent;
 }
 
 #document-container.toolbar-collapsed {
@@ -298,8 +299,7 @@ body.is-zoomed #document-paper {
     border-radius: 4px;
     background: var(--code-bg);
     border: 1px solid color-mix(in oklab, var(--border-color) 70%, transparent);
-    overflow-wrap: anywhere;
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 #document-content img {
@@ -581,32 +581,44 @@ body.inline-code-copy-enabled #document-content code.folio-copyable-code:hover {
 }
 
 .folio-heading-tools {
-    display: none;
+    display: inline-flex;
     position: absolute;
     right: 0;
     top: 50%;
     transform: translateY(-50%);
     gap: 6px;
     z-index: 3;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
 }
 
 #document-content h2:hover .folio-heading-tools,
 #document-content h3:hover .folio-heading-tools,
 #document-content h4:hover .folio-heading-tools {
-    display: inline-flex;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
 }
 
 .folio-table-tools {
-    display: none;
+    display: inline-flex;
     position: absolute;
     top: 5px;
     right: 8px;
     gap: 5px;
     z-index: 5;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
 }
 
 #document-content .table-wrapper:hover .folio-table-tools {
-    display: inline-flex;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
 }
 
 .folio-mini-btn {
@@ -664,8 +676,7 @@ body.zen-mode #document-content a.folio-code-ref-link {
     background: color-mix(in oklab, var(--accent-color) 9%, var(--code-bg));
     border: 1px solid color-mix(in oklab, var(--accent-color) 25%, transparent);
     text-decoration: none !important;
-    overflow-wrap: anywhere;
-    word-break: break-word;
+    overflow-wrap: break-word;
     transition: background-color 0.14s ease, border-color 0.14s ease;
 }
 
