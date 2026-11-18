@@ -246,7 +246,21 @@ export class Toc {
         if (nextEl) {
             nextEl.classList.add('active');
             if (nextEl.style.display !== 'none') {
-                nextEl.scrollIntoView({ block: 'nearest', behavior: smoothScroll ? 'smooth' : 'auto' });
+                const listEl = this._container.querySelector<HTMLElement>('.toc-list');
+                if (listEl) {
+                    const itemTop = nextEl.offsetTop - listEl.offsetTop;
+                    const itemBottom = itemTop + nextEl.offsetHeight;
+                    const viewTop = listEl.scrollTop;
+                    const viewBottom = viewTop + listEl.clientHeight;
+                    if (itemTop < viewTop) {
+                        listEl.scrollTo({ top: itemTop, behavior: smoothScroll ? 'smooth' : 'auto' });
+                    } else if (itemBottom > viewBottom) {
+                        listEl.scrollTo({
+                            top: Math.max(0, itemBottom - listEl.clientHeight),
+                            behavior: smoothScroll ? 'smooth' : 'auto'
+                        });
+                    }
+                }
             }
         }
         this._activeItemEl = nextEl;

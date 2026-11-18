@@ -198,9 +198,16 @@ function syncPaperScaleHeight() {
     }
 }
 
+let cachedScrollableHeight = 0;
+let lastProgressTransform = '';
+
 function applyReadingProgress(bar: HTMLElement, scrollTop: number, scrollable: number) {
     const ratio = scrollable <= 0 ? 0 : Math.min(1, Math.max(0, scrollTop / scrollable));
-    bar.style.transform = `scaleX(${ratio.toFixed(4)})`;
+    const nextTransform = `scaleX(${ratio.toFixed(4)})`;
+    if (nextTransform !== lastProgressTransform) {
+        lastProgressTransform = nextTransform;
+        bar.style.transform = nextTransform;
+    }
 }
 
 let readingProgressRafId: number | null = null;
@@ -211,7 +218,10 @@ function updateReadingProgress() {
         const container = document.getElementById('document-container');
         const bar = document.getElementById('reading-progress-bar');
         if (!container || !bar) { return; }
-        applyReadingProgress(bar, container.scrollTop, container.scrollHeight - container.clientHeight);
+        if (cachedScrollableHeight <= 0 && container.scrollTop > 0) {
+            cachedScrollableHeight = Math.max(0, container.scrollHeight - container.clientHeight);
+        }
+        applyReadingProgress(bar, container.scrollTop, cachedScrollableHeight);
     });
 }
 
@@ -283,11 +293,13 @@ function runViewportLayoutSync() {
         }
     }
     if (bar) {
-        applyReadingProgress(bar, scrollTop, scrollable);
+        cachedScrollableHeight = Math.max(0, scrollable);
+        applyReadingProgress(bar, scrollTop, cachedScrollableHeight);
     }
     wrappers.forEach((wrapper, idx) => {
         wrapper.classList.toggle('has-overflow-right', overflowStates[idx]);
     });
+    scrollSync.markDirty();
 }
 
 function scheduleViewportLayoutSync() {
@@ -302,14 +314,17 @@ if (paperEl) {
     resizeObserver.observe(paperEl);
 }
 document.getElementById('document-container')?.addEventListener('scroll', updateReadingProgress, { passive: true });
-document.addEventListener('markdown-folio:zoom-changed', syncPaperScaleHeight);
+document.addEventListener('markdown-folio:zoom-changed', () => {
+    scrollSync.markDirty();
+    scheduleViewportLayoutSync();
+});
 document.addEventListener('markdown-folio:table-threshold-changed', (event: Event) => {
     const customEvent = event as CustomEvent<{ threshold: number }>;
     if (typeof customEvent.detail?.threshold === 'number') {
         currentTableWrapThreshold = customEvent.detail.threshold;
         enhanceTables(currentTableWrapThreshold);
-        syncPaperScaleHeight();
-        scrollSync.rebuildIndex();
+        scrollSync.markDirty();
+        scheduleViewportLayoutSync();
     }
 });
 document.addEventListener('markdown-folio:expand-image-links-changed', (event: Event) => {
@@ -473,8 +488,8 @@ function runRenderPipeline(preserveScroll: boolean): void {
 
     const contentEl = document.getElementById('document-content');
     const onLayoutShift = () => {
-        syncPaperScaleHeight();
-        scrollSync.rebuildIndex();
+        scrollSync.markDirty();
+        scheduleViewportLayoutSync();
     };
 
     if (contentEl) {
@@ -504,25 +519,23 @@ function runRenderPipeline(preserveScroll: boolean): void {
     toc.render(lastRenderPayload.toc);
     findInPage.refresh();
 
-    scrollSync.rebuildIndex();
-    syncPaperScaleHeight();
+    scrollSync.markDirty();
     if (preserveScroll && scrollContainer) {
         scrollContainer.scrollTop = prevScrollTop;
     }
-    updateReadingProgress();
-    setTimeout(syncToolbarPosition, 50);
+    scheduleViewportLayoutSync();
 
     const mermaidCodes = document.querySelectorAll<HTMLElement>('.language-mermaid');
     if (mermaidCodes.length > 0) {
         const nodes = Array.from(mermaidCodes);
         runMermaid(nodes, false)
             .then(() => {
-                syncPaperScaleHeight();
-                scrollSync.rebuildIndex();
+                scrollSync.markDirty();
+                scheduleViewportLayoutSync();
             })
             .catch(() => {
-                syncPaperScaleHeight();
-                scrollSync.rebuildIndex();
+                scrollSync.markDirty();
+                scheduleViewportLayoutSync();
             });
     }
 }
@@ -571,10 +584,9 @@ window.addEventListener('message', event => {
                 themeChanged
             ) {
                 enhanceTables(currentTableWrapThreshold);
-                syncPaperScaleHeight();
-                scrollSync.rebuildIndex();
+                scrollSync.markDirty();
             }
-            setTimeout(syncToolbarPosition, 50);
+            scheduleViewportLayoutSync();
 
             // Re-render mermaid if theme actually changed
             if (themeChanged) {
@@ -582,8 +594,14 @@ window.addEventListener('message', event => {
                 if (mermaidCodes.length > 0) {
                     const nodes = Array.from(mermaidCodes);
                     runMermaid(nodes, true)
-                        .then(() => scrollSync.rebuildIndex())
-                        .catch(() => scrollSync.rebuildIndex());
+                        .then(() => {
+                            scrollSync.markDirty();
+                            scheduleViewportLayoutSync();
+                        })
+                        .catch(() => {
+                            scrollSync.markDirty();
+                            scheduleViewportLayoutSync();
+                        });
                 }
             }
             break;
