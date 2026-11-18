@@ -69,15 +69,24 @@ export class PathResolver {
         ];
     }
 
+    private static _parseLocalPath(rawPath: string): string {
+        const trimmed = rawPath.trim();
+        if (/^file:\/\//i.test(trimmed)) {
+            try {
+                return vscode.Uri.parse(trimmed).fsPath;
+            } catch {
+                return PathResolver.safeDecodePath(trimmed.replace(/^file:\/\//i, ''));
+            }
+        }
+        return PathResolver.safeDecodePath(trimmed);
+    }
+
     public static resolveCandidateFile(
         rawFilePath: string,
         documentDir: string,
         documentUri?: vscode.Uri
     ): string | null {
-        const decoded = PathResolver.safeDecodePath(rawFilePath);
-        const normalizedInput = decoded.startsWith('file://')
-            ? vscode.Uri.parse(decoded).fsPath
-            : decoded;
+        const normalizedInput = PathResolver._parseLocalPath(rawFilePath);
 
         const candidates: string[] = [];
         if (path.isAbsolute(normalizedInput)) {
@@ -300,10 +309,8 @@ export class PathResolver {
                         const [, before, rawHref, after] = anchorMatch;
                         if (PathResolver.isImageFilePath(rawHref) && !before.includes('data-folio-img-src=') && !after.includes('data-folio-img-src=')) {
                             try {
-                                const pathPart = PathResolver.safeDecodePath(PathResolver.stripQueryAndHash(rawHref));
-                                const resolved = pathPart.startsWith('file://')
-                                    ? vscode.Uri.parse(pathPart).fsPath
-                                    : path.resolve(path.isAbsolute(pathPart) ? pathPart : path.join(documentDir, pathPart));
+                                const pathPart = PathResolver._parseLocalPath(PathResolver.stripQueryAndHash(rawHref));
+                                const resolved = path.resolve(path.isAbsolute(pathPart) ? pathPart : path.join(documentDir, pathPart));
                                 const src = buildWebviewImgSrc(resolved);
                                 if (src) {
                                     out.push(`<a${before} href="${rawHref}" data-folio-img-src="${src}"${after}>`);

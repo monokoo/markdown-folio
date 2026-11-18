@@ -13,10 +13,11 @@ export function slugify(text: string): string {
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .replace(/[\u0111\u0110]/g, 'd')
-        .replace(/[^\w\s-]/g, '')
+        .replace(/[^\p{L}\p{N}_\s-]/gu, '')
         .trim()
         .replace(/\s+/g, '-')
-        .replace(/-+/g, '-');
+        .replace(/-+/g, '-')
+        .replace(/^-+|-+$/g, '');
 
     return slug || 'section';
 }

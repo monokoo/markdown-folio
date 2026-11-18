@@ -79,8 +79,10 @@ export class Toc {
             return;
         }
 
+        const minLevel = tocItems.reduce((min, item) => Math.min(min, item.level), 6);
         const html = tocItems
             .map(item => {
+                const normalizedLevel = Math.min(6, Math.max(1, item.level - minLevel + 1));
                 const normalizedText = item.text.normalize('NFC');
                 const escapedText = normalizedText
                     .replace(/&/g, '&amp;')
@@ -88,7 +90,7 @@ export class Toc {
                     .replace(/>/g, '&gt;');
                 const isActive = this._activeSlug && item.slug === this._activeSlug ? ' active' : '';
                 return `
-                    <div class="toc-item level-${item.level}${isActive}" data-slug="${item.slug}" title="${escapedText.replace(/"/g, '&quot;')}">
+                    <div class="toc-item level-${normalizedLevel}${isActive}" data-slug="${item.slug}" title="${escapedText.replace(/"/g, '&quot;')}">
                         ${escapedText}
                     </div>
                 `;

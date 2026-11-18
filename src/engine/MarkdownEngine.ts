@@ -95,10 +95,11 @@ export class MarkdownEngine {
             .use(markdownItKatex)
             .use(markdownItTaskLists, { enabled: true });
 
-        // Override validateLink to allow all image data URIs (default rejects svg+xml)
+        // Override validateLink to allow all image data URIs (default rejects svg+xml) and file:// links
         const defaultValidateLink = this.md.validateLink.bind(this.md);
         this.md.validateLink = (url: string) => {
-            if (/^data:image\//i.test(url)) { return true; }
+            const trimmed = url.trim();
+            if (/^data:image\//i.test(trimmed) || /^file:\/\//i.test(trimmed)) { return true; }
             return defaultValidateLink(url);
         };
 
@@ -180,7 +181,7 @@ export class MarkdownEngine {
                 const level = Number(token.tag.replace('h', ''));
                 const inline = tokens[i + 1];
                 if (inline && inline.type === 'inline') {
-                    const text = inline.content.trim();
+                    const text = this.extractHeadingPlainText(inline);
                     if (text) {
                         const anchorId = token.attrGet('id');
                         let slug: string;
@@ -200,6 +201,50 @@ export class MarkdownEngine {
 
         const html = this.md.renderer.render(tokens, this.md.options, env);
         return { html, toc };
+    }
+
+    /**
+     * Extracts plain display text from a heading's inline token tree without Markdown delimiters.
+     */
+    private extractHeadingPlainText(inlineToken: ReturnType<MarkdownIt['parse']>[number]): string {
+        type MdToken = ReturnType<MarkdownIt['parse']>[number];
+        const collect = (children: MdToken[] | null | undefined): string => {
+            if (!children || children.length === 0) {
+                return '';
+            }
+            const parts: string[] = [];
+            for (const child of children) {
+                if (child.type === 'text' || child.type === 'code_inline' || child.type === 'math_inline') {
+                    parts.push(child.content);
+                } else if (child.type === 'image') {
+                    const alt = child.children && child.children.length > 0
+                        ? collect(child.children)
+                        : child.content;
+                    if (alt) {
+                        parts.push(alt);
+                    }
+                } else if (child.type === 'softbreak' || child.type === 'hardbreak') {
+                    parts.push(' ');
+                } else if (
+                    child.type === 'strong_open' || child.type === 'strong_close' ||
+                    child.type === 'em_open' || child.type === 'em_close' ||
+                    child.type === 'link_open' || child.type === 'link_close' ||
+                    child.type === 's_open' || child.type === 's_close' ||
+                    child.type === 'code_block' || child.type === 'html_inline'
+                ) {
+                    continue;
+                } else if (child.children && child.children.length > 0) {
+                    parts.push(collect(child.children));
+                }
+            }
+            return parts.join('');
+        };
+
+        const raw = inlineToken.children && inlineToken.children.length > 0
+            ? collect(inlineToken.children)
+            : inlineToken.content;
+        const cleaned = raw.replace(/\s+/g, ' ').trim();
+        return cleaned || inlineToken.content.trim();
     }
 
     /** Returns highlighted inner HTML (no wrapping <pre><code>). */

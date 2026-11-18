@@ -472,9 +472,15 @@ body.${themeName}-mode hr {
 
     private static _buildTocHtml(toc: TocItem[]): string {
         if (toc.length === 0) { return ''; }
+        const minLevel = toc.reduce((m, item) => Math.min(m, item.level), 6);
         const items = toc.map(item => {
-            const text = item.text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            return `<div class="toc-item level-${item.level}"><a href="#${item.slug}">${text}</a></div>`;
+            const normalizedLevel = Math.min(6, Math.max(1, item.level - minLevel + 1));
+            const text = item.text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+            const slug = item.slug.replace(/"/g, '&quot;');
+            return `<div class="toc-item level-${normalizedLevel}"><a href="#${slug}">${text}</a></div>`;
         }).join('\n');
         return `<div class="toc-header">Contents</div>\n<div class="toc-list">\n${items}\n</div>`;
     }

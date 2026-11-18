@@ -376,9 +376,11 @@ export class PreviewPanel {
         const rawPath = typeof payload?.path === 'string' ? payload.path.trim() : '';
         if (!rawPath) { return; }
 
-        const hashMatch = rawPath.match(/^([^#]+)#L(\d+)(?:-L?\d+)?$/i);
+        const hashMatch = rawPath.match(/^([^#]+)#L(\d+)(?:-L?(\d+))?$/i);
         const withoutQuery = PathResolver.stripQueryAndHash(hashMatch ? hashMatch[1] : rawPath);
-        const lineMatch = withoutQuery.match(/^(.+?):(\d+)(?::(\d+))?$/);
+        const lineMatch = /^file:\/\//i.test(withoutQuery)
+            ? withoutQuery.match(/^(file:\/\/.+?):(\d+)(?::(\d+))?$/i)
+            : withoutQuery.match(/^(.+?):(\d+)(?::(\d+))?$/);
         const filePart = lineMatch?.[1] ?? withoutQuery;
         const lineNum = hashMatch?.[2]
             ? Math.max(0, parseInt(hashMatch[2], 10) - 1)
@@ -400,11 +402,21 @@ export class PreviewPanel {
         try {
             if (lineNum !== undefined) {
                 const doc = await vscode.workspace.openTextDocument(uri);
-                const pos = new vscode.Position(lineNum, colNum);
-                await vscode.window.showTextDocument(doc, {
+                const maxLine = Math.max(0, doc.lineCount - 1);
+                const startLine = Math.min(lineNum, maxLine);
+                const endLine = hashMatch?.[3]
+                    ? Math.min(Math.max(startLine, parseInt(hashMatch[3], 10) - 1), maxLine)
+                    : startLine;
+                const startPos = new vscode.Position(startLine, colNum);
+                const endPos = endLine > startLine
+                    ? new vscode.Position(endLine, doc.lineAt(endLine).text.length)
+                    : startPos;
+                const selection = new vscode.Range(startPos, endPos);
+                const editor = await vscode.window.showTextDocument(doc, {
                     preview: false,
-                    selection: new vscode.Range(pos, pos)
+                    selection
                 });
+                editor.revealRange(selection, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
             } else {
                 await vscode.commands.executeCommand('vscode.open', uri);
             }
@@ -490,13 +502,8 @@ export class PreviewPanel {
     }
 
     private _buildNotionMarkdownSource(): string {
-        let text = this._document.getText();
-        // Normalize CRLF to LF
-        text = text.replace(/\r\n/g, '\n');
-        // Remove YAML frontmatter if it starts at the top
-        text = text.replace(/^---\n[\s\S]*?\n---\n?/, '');
-        // Trim leading/trailing blank lines
-        return text.trim();
+        const text = this._document.getText().replace(/\r\n/g, '\n');
+        return FrontmatterParser.extract(text).content.replace(/\r\n/g, '\n').trim();
     }
 
     private _buildExportHtml(): string {
