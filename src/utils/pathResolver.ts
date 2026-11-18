@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 
 export interface TextPreviewPayload {
     fileName: string;
@@ -102,10 +103,24 @@ export class PathResolver {
             for (const folder of vscode.workspace.workspaceFolders ?? []) {
                 candidates.push(path.resolve(folder.uri.fsPath, normalizedInput));
             }
-            let cur = documentDir;
-            for (let i = 0; i < 4; i++) {
+            const homeDir = path.resolve(os.homedir());
+            const wsRoot = documentUri
+                ? vscode.workspace.getWorkspaceFolder(documentUri)?.uri.fsPath
+                : undefined;
+            const resolvedWsRoot = wsRoot ? path.resolve(wsRoot) : undefined;
+            const wsRootPrefix = resolvedWsRoot
+                ? (resolvedWsRoot.endsWith(path.sep) ? resolvedWsRoot : resolvedWsRoot + path.sep)
+                : undefined;
+            let cur = path.resolve(documentDir);
+            for (let i = 0; i < 3; i++) {
                 const parent = path.dirname(cur);
-                if (!parent || parent === cur) { break; }
+                if (!parent || parent === cur || parent === path.parse(parent).root) { break; }
+                if (resolvedWsRoot && parent !== resolvedWsRoot && !parent.startsWith(wsRootPrefix!)) {
+                    break;
+                }
+                if (!resolvedWsRoot && (cur === homeDir || parent === path.dirname(homeDir))) {
+                    break;
+                }
                 candidates.push(path.resolve(parent, normalizedInput));
                 cur = parent;
             }
